@@ -651,7 +651,7 @@ func (h *streamHandlers) executeClarify(ctx context.Context, issue domain.Issue,
 	clarifyID := fmt.Sprintf("clarify-%d", time.Now().UnixNano())
 	modelID := clarifyAllowedModel(modelCtx, responsible, request.Model)
 	credentials := runtime.RunCredentials{
-		CodeBuddy:          runtime.CodeBuddyCredential{APIKey: strings.TrimSpace(responsible.CodeBuddyAPIKey), InternetEnvironment: strings.TrimSpace(responsible.CodeBuddyInternetEnvironment)},
+		CodeBuddy:          runtime.CodeBuddyCredential{APIKey: strings.TrimSpace(responsible.CodeBuddyAPIKey), InternetEnvironment: strings.TrimSpace(responsible.CodeBuddyInternetEnvironment), BaseURL: strings.TrimSpace(responsible.CodeBuddyBaseURL)},
 		GitHTTPCredentials: h.repo.GitHTTPCredentialSecrets(ctx, responsible.ID),
 	}
 	turnPrompt := userMsg

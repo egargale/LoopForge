@@ -230,6 +230,7 @@ func (e *Engine) dispatchRunnerTask(ctx context.Context, runnerID string, run do
 				return "", errors.New("当前责任人未配置 CodeBuddy API Key：请先在个人配置中配置")
 			}
 			invocation.CodeBuddyAPIKey = sb.credentialSnapshot().CodeBuddy.APIKey
+			invocation.CodeBuddyBaseURL = sb.credentialSnapshot().CodeBuddy.BaseURL
 			invocation.CodeBuddyInternetEnvironment = sb.credentialSnapshot().CodeBuddy.InternetEnvironment
 		default:
 			if runtime.IsAgentCLI(ex.Kind) {

@@ -94,11 +94,11 @@ func TestProviderUserCredentials(t *testing.T) {
 				t.Fatal(err)
 			}
 			u, _ := st.UserByLoginName(login)
-			codexURL, claudeURL := "https://codex.example/v1", "https://claude.example"
+			codexURL, claudeURL, codeBuddyURL := "https://codex.example/v1", "https://claude.example", "https://cb.example/v1"
 			levels, defaultOnly := []string{" low ", "xhigh", "low"}, []string{}
 			codexModels := []domain.CLIModel{{ID: "gpt-5.5", Name: "gpt-5.5", ReasoningEfforts: &levels}}
 			claudeModels := []domain.CLIModel{{ID: "claude-sonnet", Name: "Sonnet", ReasoningEfforts: &defaultOnly}}
-			_, err = st.UpdateUserCredentials(u.ID, UserCredentialUpdate{CodexAPIKey: "codex-secret", CodexBaseURL: &codexURL, CodexModels: &codexModels, ClaudeCodeAPIKey: "claude-secret", ClaudeCodeBaseURL: &claudeURL, ClaudeCodeModels: &claudeModels})
+			_, err = st.UpdateUserCredentials(u.ID, UserCredentialUpdate{CodexAPIKey: "codex-secret", CodexBaseURL: &codexURL, CodexModels: &codexModels, ClaudeCodeAPIKey: "claude-secret", ClaudeCodeBaseURL: &claudeURL, ClaudeCodeModels: &claudeModels, CodeBuddyAPIKey: "cb-secret", CodeBuddyBaseURL: &codeBuddyURL})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -111,7 +111,7 @@ func TestProviderUserCredentials(t *testing.T) {
 				t.Fatal(err)
 			}
 			got, ok := st.User(u.ID)
-			if !ok || got.CodexAPIKey != "codex-secret" || got.ClaudeCodeAPIKey != "claude-secret" || got.CodexBaseURL != codexURL || got.ClaudeCodeBaseURL != claudeURL || len(got.CodexModels) != 1 || got.CodexModels[0].ID != "gpt-5.5" || got.CodexModels[0].Name != "" || len(got.ClaudeCodeModels) != 1 || got.ClaudeCodeModels[0].Name != "Sonnet" {
+			if !ok || got.CodexAPIKey != "codex-secret" || got.ClaudeCodeAPIKey != "claude-secret" || got.CodexBaseURL != codexURL || got.ClaudeCodeBaseURL != claudeURL || got.CodeBuddyBaseURL != codeBuddyURL || len(got.CodexModels) != 1 || got.CodexModels[0].ID != "gpt-5.5" || got.CodexModels[0].Name != "" || len(got.ClaudeCodeModels) != 1 || got.ClaudeCodeModels[0].Name != "Sonnet" {
 				t.Fatalf("credentials did not survive refresh and partial update: %+v %+v", got.CodexModels, got.ClaudeCodeModels)
 			}
 			if efforts := got.CodexModels[0].ReasoningEfforts; efforts == nil || !slices.Equal(*efforts, []string{"low", "xhigh"}) {
@@ -145,12 +145,14 @@ func TestProviderUserCredentials(t *testing.T) {
 			}
 			empty := ""
 			noModels := []domain.CLIModel{}
-			_, err = st.UpdateUserCredentials(u.ID, UserCredentialUpdate{CodexAPIKeyClear: true, ClaudeCodeAPIKeyClear: true, CodexBaseURL: &empty, ClaudeCodeBaseURL: &empty, CodexModels: &noModels, ClaudeCodeModels: &noModels})
+			// Clearing the key nulls a Base URL set in the same request: a URL
+			// without a key is never a valid state.
+			_, err = st.UpdateUserCredentials(u.ID, UserCredentialUpdate{CodexAPIKeyClear: true, ClaudeCodeAPIKeyClear: true, CodexBaseURL: &empty, ClaudeCodeBaseURL: &empty, CodexModels: &noModels, ClaudeCodeModels: &noModels, CodeBuddyAPIKeyClear: true, CodeBuddyBaseURL: &codeBuddyURL})
 			if err != nil {
 				t.Fatal(err)
 			}
 			cleared, _ := st.User(u.ID)
-			if cleared.CodexAPIKey != "" || cleared.ClaudeCodeAPIKey != "" || cleared.CodexBaseURL != "" || cleared.ClaudeCodeBaseURL != "" || len(cleared.CodexModels) != 0 || len(cleared.ClaudeCodeModels) != 0 || !cleared.GitHubCredentialConfigured {
+			if cleared.CodexAPIKey != "" || cleared.ClaudeCodeAPIKey != "" || cleared.CodexBaseURL != "" || cleared.ClaudeCodeBaseURL != "" || len(cleared.CodexModels) != 0 || len(cleared.ClaudeCodeModels) != 0 || !cleared.GitHubCredentialConfigured || cleared.CodeBuddyAPIKey != "" || cleared.CodeBuddyBaseURL != "" {
 				t.Fatal("clear operation did not isolate providers")
 			}
 		})

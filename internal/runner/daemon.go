@@ -1126,6 +1126,9 @@ func bindInvocationCredentials(inv *domain.RunnerInvocation, bindings []runtime.
 				return nil, nil, errors.New("CodeBuddy 个人 API Key 未配置")
 			}
 			env["CODEBUDDY_API_KEY"] = key
+			if baseURL := strings.TrimSpace(inv.CodeBuddyBaseURL); baseURL != "" {
+				env["CODEBUDDY_BASE_URL"] = baseURL
+			}
 			if net := strings.TrimSpace(inv.CodeBuddyInternetEnvironment); net != "" {
 				env["CODEBUDDY_INTERNET_ENVIRONMENT"] = net
 			}

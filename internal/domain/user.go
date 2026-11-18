@@ -40,6 +40,7 @@ type User struct {
 	CodeBuddyAPIKey              string     `json:"codeBuddyApiKey,omitempty"`
 	CodeBuddyAPIKeyConfigured    bool       `json:"codeBuddyApiKeyConfigured,omitempty"`
 	CodeBuddyInternetEnvironment string     `json:"codeBuddyInternetEnvironment,omitempty"`
+	CodeBuddyBaseURL             string     `json:"codeBuddyBaseUrl,omitempty"`
 	CodeBuddyModels              []CLIModel `json:"codeBuddyModels,omitempty"`
 	CreatedAt                    time.Time  `json:"createdAt"`
 	UpdatedAt                    time.Time  `json:"updatedAt"`

@@ -41,6 +41,9 @@ const (
 type CodeBuddyCredential struct {
 	APIKey              string
 	InternetEnvironment string
+	// BaseURL is the responsible user's self-hosted Chat Completions gateway.
+	// Empty keeps the CLI on the official endpoint of its edition.
+	BaseURL string
 	// Sponsored is set when the responsible user has no key of their own and
 	// the platform's shared key is used; such runs are limited to
 	// SponsoredModels (the default first).

@@ -108,7 +108,7 @@ func assistantEngineCredential(user domain.User, engine string) (apiKey, baseURL
 	case assistantEngineClaude:
 		return strings.TrimSpace(user.ClaudeCodeAPIKey), strings.TrimSpace(user.ClaudeCodeBaseURL)
 	case assistantEngineCodeBuddy:
-		return strings.TrimSpace(user.CodeBuddyAPIKey), ""
+		return strings.TrimSpace(user.CodeBuddyAPIKey), strings.TrimSpace(user.CodeBuddyBaseURL)
 	}
 	cred := user.AgentCLICredentials[engine]
 	if runtime.IsAgentCLI(engine) && engine != runtime.AgentCLICursor {

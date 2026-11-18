@@ -46,6 +46,9 @@ func (h *assistantHandlers) assistantChatUser(user domain.User) (chatUser domain
 	user.CodeBuddyAPIKey = key.APIKey
 	user.CodeBuddyInternetEnvironment = key.InternetEnvironment
 	user.CodeBuddyModels = nil
+	// The lent key belongs to a platform edition; a member's Base URL is a
+	// personal endpoint and must never receive it.
+	user.CodeBuddyBaseURL = ""
 	return user, key.Models, true
 }
 
@@ -72,6 +75,13 @@ func (h *assistantHandlers) usesSharedKey(user domain.User) bool {
 func (h *assistantHandlers) chatCatalog(user domain.User) assistantModelCatalog {
 	key, shared := h.assistantSharedKey()
 	if !shared || !h.usesSharedKey(user) {
+		// A self-hosted gateway serves its own models; the edition's list would
+		// be wrong ids the endpoint rejects. Only a turn on the user's own key
+		// may reach one: a sponsored turn goes to the shared key's edition
+		// endpoint (see assistantChatUser).
+		if baseURL := strings.TrimSpace(user.CodeBuddyBaseURL); baseURL != "" {
+			return assistantBaseURLCatalog(context.Background(), user.CodeBuddyAPIKey, baseURL)
+		}
 		return withCodeBuddyPersonalModels(loadAssistantModels(user.CodeBuddyInternetEnvironment, user.CodeBuddyAPIKey), user)
 	}
 	return restrictAssistantCatalog(assistantChatCatalog(key.InternetEnvironment, key.APIKey, key.Models), key.Models)

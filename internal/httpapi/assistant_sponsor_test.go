@@ -211,12 +211,25 @@ func TestOwnKeyKeepsItsEnvironmentDefaultWhileAKeyIsShared(t *testing.T) {
 		t.Fatalf("own-key turn: %d %s used=%+v", rec.Code, rec.Body.String(), used)
 	}
 
+	// A Base URL belongs to the personal key: the lent key must never reach it,
+	// and clearing the key clears it.
+	gateway := "http://member-gateway.invalid/v1"
+	if _, err := st.UpdateUserCredentials(member.ID, repo.UserCredentialUpdate{CodeBuddyBaseURL: &gateway}); err != nil {
+		t.Fatal(err)
+	}
+
 	// Clearing the key moves the member onto the shared key and its models.
 	if _, err := st.UpdateUserCredentials(member.ID, repo.UserCredentialUpdate{CodeBuddyAPIKeyClear: true}); err != nil {
 		t.Fatal(err)
 	}
 	stored, _ = st.User(member.ID)
+	if stored.CodeBuddyBaseURL != "" {
+		t.Fatalf("clearing the key kept Base URL %q", stored.CodeBuddyBaseURL)
+	}
 	borrowed, _, _ := h.assistantChatUser(stored)
+	if borrowed.CodeBuddyBaseURL != "" || borrowed.CodeBuddyAPIKey != "platform-secret" {
+		t.Fatalf("shared-key turn carries Base URL %q with key %q", borrowed.CodeBuddyBaseURL, borrowed.CodeBuddyAPIKey)
+	}
 	if got := assistantAllowedModel("", h.chatCatalog(borrowed)); got != "glm-5.1" {
 		t.Fatalf("a shared-key conversation resolves to %q, want glm-5.1", got)
 	}

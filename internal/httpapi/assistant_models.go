@@ -341,6 +341,30 @@ func assistantChatCatalog(environment, apiKey string, shared []string) assistant
 	return catalog
 }
 
+// assistantBaseURLCatalog lists the models a self-hosted CodeBuddy gateway
+// publishes, so the picker offers ids that endpoint actually serves. When the
+// endpoint lists nothing the catalog keeps a single "default" entry instead of
+// falling back to official model ids the gateway does not have.
+func assistantBaseURLCatalog(ctx context.Context, apiKey, baseURL string) assistantModelCatalog {
+	var models []assistantModel
+	seen := map[string]bool{}
+	for _, model := range cachedAssistantEngineDiscovery(ctx, runtime.AgentCLIProtocolChat, apiKey, baseURL) {
+		if model.ID == "" || seen[model.ID] {
+			continue
+		}
+		seen[model.ID] = true
+		name := strings.TrimSpace(model.Name)
+		if name == "" {
+			name = model.ID
+		}
+		models = append(models, assistantListedModel(model.ID, name, ""))
+	}
+	if len(models) == 0 {
+		return assistantModelCatalog{Default: assistantDefaultModel, Models: []assistantModel{assistantListedModel(assistantDefaultModel, "CLI 默认模型", "")}}
+	}
+	return assistantModelCatalog{Default: models[0].ID, Models: models}
+}
+
 // loadAssistantModels combines configured models with the discovery cache for
 // this credential and network environment.
 func loadAssistantModels(environment, apiKey string) assistantModelCatalog {

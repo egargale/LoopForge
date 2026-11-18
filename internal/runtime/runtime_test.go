@@ -1273,10 +1273,11 @@ func TestExecSetsPWDAndRejectsMissingWorkspace(t *testing.T) {
 func TestRunSandboxBindsCodeBuddyCredentialOnlyToTargetProcess(t *testing.T) {
 	t.Setenv("CODEBUDDY_API_KEY", "host-key-must-not-leak")
 	t.Setenv("CODEBUDDY_INTERNET_ENVIRONMENT", "host-network-must-not-leak")
+	t.Setenv("CODEBUDDY_BASE_URL", "http://host-gateway-must-not-leak")
 	root := t.TempDir()
 	manager := NewManager(root)
 	sandbox, err := manager.AcquireRun(context.Background(), "run-credential", domain.SandboxProfile{ID: "local", Driver: "local"}, ProviderRequirements("codebuddy"), RunCredentials{
-		CodeBuddy: CodeBuddyCredential{APIKey: "project-key", InternetEnvironment: "project-network"},
+		CodeBuddy: CodeBuddyCredential{APIKey: "project-key", InternetEnvironment: "project-network", BaseURL: "http://project-gateway/v1"},
 	}, SandboxResources{})
 	if err != nil {
 		t.Fatal(err)
@@ -1284,7 +1285,7 @@ func TestRunSandboxBindsCodeBuddyCredentialOnlyToTargetProcess(t *testing.T) {
 	defer sandbox.Close(context.Background())
 
 	codeBuddy := CommandSpec{
-		Argv:               []string{"sh", "-lc", `printf '%s|%s|%s' "$CODEBUDDY_API_KEY" "$CODEBUDDY_INTERNET_ENVIRONMENT" "$HOME"; touch "$HOME/used"`},
+		Argv:               []string{"sh", "-lc", `printf '%s|%s|%s|%s' "$CODEBUDDY_API_KEY" "$CODEBUDDY_INTERNET_ENVIRONMENT" "$CODEBUDDY_BASE_URL" "$HOME"; touch "$HOME/used"`},
 		Provider:           "codebuddy",
 		CredentialBindings: []CredentialBinding{BindCodeBuddy},
 		PrivateHome:        true,
@@ -1294,17 +1295,17 @@ func TestRunSandboxBindsCodeBuddyCredentialOnlyToTargetProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	parts := strings.Split(strings.TrimSpace(output), "|")
-	if len(parts) != 3 || parts[0] != "project-key" || parts[1] != "project-network" {
+	if len(parts) != 4 || parts[0] != "project-key" || parts[1] != "project-network" || parts[2] != "http://project-gateway/v1" {
 		t.Fatalf("bound credential output = %q", output)
 	}
-	if !strings.HasPrefix(parts[2], filepath.Join(sandbox.Workspace(), ".agentflow", "private-home")) {
-		t.Fatalf("CodeBuddy HOME is not run-private: %q", parts[2])
+	if !strings.HasPrefix(parts[3], filepath.Join(sandbox.Workspace(), ".agentflow", "private-home")) {
+		t.Fatalf("CodeBuddy HOME is not run-private: %q", parts[3])
 	}
-	plain, err := sandbox.Exec(context.Background(), CommandSpec{Argv: []string{"sh", "-lc", `printf '%s|%s' "$CODEBUDDY_API_KEY" "$CODEBUDDY_INTERNET_ENVIRONMENT"`}, Provider: "command"}, nil)
+	plain, err := sandbox.Exec(context.Background(), CommandSpec{Argv: []string{"sh", "-lc", `printf '%s|%s|%s' "$CODEBUDDY_API_KEY" "$CODEBUDDY_INTERNET_ENVIRONMENT" "$CODEBUDDY_BASE_URL"`}, Provider: "command"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(plain) != "|" {
+	if strings.TrimSpace(plain) != "||" {
 		t.Fatalf("credential leaked to unrelated child: %q", plain)
 	}
 	err = filepath.Walk(sandbox.Workspace(), func(path string, info os.FileInfo, walkErr error) error {

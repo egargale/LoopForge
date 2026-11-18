@@ -68,10 +68,11 @@ const CREDENTIAL_KINDS=[
     use:'按主机管理 HTTPS 访问令牌，工作区的 git、gh、glab 自动认证',dialog:()=>openGitHTTPCredentials(),action:'管理令牌'},
   {key:'codeBuddyApiKey',group:'model',name:'CodeBuddy',short:'CodeBuddy API Key',logo:'codebuddy',
     use:'AI 对话与 SOP 的 CodeBuddy 执行器',
-    description:'AI 对话（含 Claude、GPT 等模型）和 SOP 的 CodeBuddy 执行器都使用它；网络环境按账号所在环境配置。',
+    description:'AI 对话（含 Claude、GPT 等模型）和 SOP 的 CodeBuddy 执行器都使用它；网络环境按账号所在环境配置。走自建网关时填 Base URL，网络环境不再生效。',
     guide:[['先在下方选择 CodeBuddy 账号所在的网络环境：国际站、国内站或 iOA'],['登录该站点的 API Key 页面，新建 API Key',codeBuddyKeyURL,codeBuddyKeyLinkLabel],['复制以 <code>ck_</code> 开头的密钥粘贴到下方；DeepSeek、OpenAI 等第三方模型的 Key 不能填在这里']],
     placeholder:'请输入个人 ck_ key',
     extra:{name:'codeBuddyInternetEnvironment',label:'网络环境',options:CODEBUDDY_ENVIRONMENTS},
+    baseUrl:{name:'codeBuddyBaseUrl',label:'Base URL',placeholder:'https://gateway.example.com/v1',url:true,clearWithKey:true},
     models:{name:'codeBuddyModels',engine:'codebuddy'},
     impact:'AI 对话将只能使用默认模型，CodeBuddy 执行器节点会失败。'},
   {key:'codexApiKey',group:'model',name:'Codex',short:'Codex API Key',logo:'codex',monochrome:true,
@@ -236,7 +237,7 @@ function credentialCatalogDetailHTML(mode,kind,protocol){
   return mode!=='remote'?escapeHTML(copy.detail):`目录为空时，AI 对话列出 Base URL 的 <code data-catalog-endpoint>${escapeHTML(credentialModelsEndpoint(kind,protocol))}</code> 返回的模型。`;
 }
 function credentialCatalogHTML(kind,user,{runnerLogin=false,label='模型目录'}={}){
-  const baseUrl=kind.extra?.url?credentialValue(user,kind.extra.name):'',protocol=credentialProtocol(kind,user);
+  const baseUrl=credentialBaseURL(kind,user)||(kind.extra?.url?credentialValue(user,kind.extra.name):''),protocol=credentialProtocol(kind,user);
   const cursorAutomatic=kind.agentCli==='cursor'&&!user?.agentCliCredentials?.cursor?.modelsCustomized;
   const models=credentialCatalogModels(cursorAutomatic?[]:credentialValue(user,kind.models.name)),empty=!models.length;
   const mode=runnerLogin?'runner':!String(baseUrl||'').trim()?'official':'remote';
@@ -268,9 +269,9 @@ function credentialCatalogRowModel(row){
 function credentialCatalogFilledRows(catalog){return credentialCatalogRows(catalog).filter(row=>credentialCatalogModels([credentialCatalogRowModel(row)]).length)}
 function readCredentialCatalog(catalog){return credentialCatalogModels(credentialCatalogRows(catalog).map(credentialCatalogRowModel))}
 function credentialCatalogMode(catalog){
-  const form=catalog?.closest('.credential-editor-form'),extra=form?.querySelector('input[name="extra"]');
-  if(!extra||catalog.dataset.catalogMode==='runner')return catalog.dataset.catalogMode;
-  return extra.value.trim()?'remote':'official';
+  const form=catalog?.closest('.credential-editor-form'),extra=form?.querySelector('input[name="extra"]'),baseUrl=form?.querySelector('input[name="baseUrl"]');
+  if((!extra&&!baseUrl)||catalog.dataset.catalogMode==='runner')return catalog.dataset.catalogMode;
+  return (baseUrl||extra).value.trim()?'remote':'official';
 }
 function credentialCatalogDirty(catalog){return !!catalog&&credentialCatalogKey(readCredentialCatalog(catalog))!==catalog.dataset.originalKey}
 function credentialCatalogPayload(catalog){
@@ -538,6 +539,8 @@ function refreshCredentialEnvironmentLinks(scope,value){
   const hint=scope?.querySelector('[data-credential-env-hint]');if(hint)hint.innerHTML=codeBuddyEnvironmentHintHTML(value);
   scope?.querySelectorAll('[data-wizard-link][data-environment-link]').forEach(link=>{link.href=codeBuddyKeyURL(value);link.textContent=`${codeBuddyKeyLinkLabel(value)} ↗`});
 }
+function credentialBaseURL(kind,user){return kind?.baseUrl?String(credentialValue(user,kind.baseUrl.name)||'').trim():''}
+function credentialBaseURLField(kind,value,note){return kind.baseUrl?credentialFieldHTML({label:kind.baseUrl.label,note:note??(kind.baseUrl.note||'可选 · 留空连接官方站点'),name:'baseUrl',type:'url',value,placeholder:kind.baseUrl.placeholder,hint:null}):''}
 function credentialExtraError(kind,value,protocol){
   const text=String(value||'').trim();
   if(!text&&kind.extra?.required?.(protocol))return '请填写 Base URL';
@@ -557,6 +560,7 @@ function credentialSavePayload(kind,values={}){
   }
   const payload={[kind.key]:String(values.secret||'').trim()};
   if(kind.extra&&values.extra!==undefined)payload[kind.extra.name]=String(values.extra||'').trim()||(kind.extra.fallback||'');
+  if(kind.baseUrl&&values.baseUrl!==undefined)payload[kind.baseUrl.name]=String(values.baseUrl||'').trim();
   if(kind.models&&values.models!==undefined)payload[kind.models.name]=credentialCatalogStored(values.models);
   return payload;
 }
@@ -568,6 +572,7 @@ function credentialClearPayload(kind){
   }
   const payload={[kind.key+'Clear']:true};
   if(kind.extra?.clearWithKey)payload[kind.extra.name]='';
+  if(kind.baseUrl?.clearWithKey)payload[kind.baseUrl.name]='';
   if(kind.models)payload[kind.models.name]=[];
   return payload;
 }
@@ -603,6 +608,7 @@ function credentialSubline(kind,user){
     return source+dot+'<span class="is-ok">令牌有效</span>'+(result.scopes?.length?dot+`<span class="credential-mono">${escapeHTML(result.scopes.join(' · '))}</span>`:'');
   }
   if(kind.key==='codeBuddyApiKey'){
+    if(credentialBaseURL(kind,user))return `<span>自建网关</span><span class="credential-mono">${escapeHTML(credentialBaseURL(kind,user))}</span>${dot}${use}`;
     const raw=String(user.codeBuddyInternetEnvironment||'').trim(),env=codeBuddyEnvironment(raw);
     return `<span>网络环境</span>${env?`<span class="credential-mono">${escapeHTML(env.label)}</span>`:`<span class="is-err">「${escapeHTML(raw)}」无法识别，按国际站连接</span>`}${dot}${use}`;
   }
@@ -666,12 +672,15 @@ function credentialEditorHTML(kind,user){
   const extraField=!kind.extra?''
     :kind.extra.options?credentialSelectFieldHTML(kind,extraStored,'与 Key 所在站点一致')
     :credentialFieldHTML({label:kind.extra.label,note:kind.extra.note||(kind.extra.url?'留空使用官方地址':''),name:'extra',type:kind.extra.url?'url':'text',value:extraValue,placeholder:kind.extra.placeholder,hint:null});
+  const baseURLValue=credentialBaseURL(kind,user);
+  const baseURLField=credentialBaseURLField(kind,baseURLValue);
   const protocolValue=kind.protocol?credentialProtocol(kind,user):'';
   const protocolField=kind.protocol?credentialProtocolHTML(kind,protocolValue):'';
   const legacy=!!(kind.extra?.options&&codeBuddyEnvironmentLegacy(user[kind.extra.name]));
-  return `<div class="credential-editor-form${kind.models?' has-catalog':''}"${kind.extra?` data-original="${escapeHTML(extraValue)}"`:''}${kind.protocol?` data-original-protocol="${escapeHTML(protocolValue)}"`:''}${legacy?' data-legacy="true"':''}>
+  return `<div class="credential-editor-form${kind.models?' has-catalog':''}"${kind.extra?` data-original="${escapeHTML(extraValue)}"`:''}${kind.protocol?` data-original-protocol="${escapeHTML(protocolValue)}"`:''}${kind.baseUrl?` data-original-base-url="${escapeHTML(baseURLValue)}"`:''}${legacy?' data-legacy="true"':''}>
     ${credentialFieldHTML({label:kind.short,note:'已配置 · 留空则不改',name:'secret',placeholder:'输入新值以替换',hint:kind.hint||''})}
     ${extraField}
+    ${baseURLField}
     ${protocolField}
     ${kind.models?credentialCatalogHTML(kind,user):''}
     <div class="credential-swap">
@@ -771,6 +780,7 @@ function resetCredentialEditor(row){
   row.querySelectorAll('[name="secret"]').forEach(input=>{input.value='';if(input.tagName==='INPUT')input.type='password'});
   const form=row.querySelector('.credential-editor-form');if(!form)return;
   const extra=form.querySelector('[name="extra"]');if(extra)extra.value=form.dataset.original||'';
+  const baseUrl=form.querySelector('input[name="baseUrl"]');if(baseUrl)baseUrl.value=form.dataset.originalBaseUrl||'';
   if(extra?.tagName==='SELECT')refreshCredentialEnvironmentLinks(form,extra.value);
   const protocol=form.querySelector('select[name="protocol"]');if(protocol)protocol.value=form.dataset.originalProtocol||'';
   resetCredentialCatalog(row);
@@ -797,8 +807,8 @@ function showCredentialPane(row,name,focus=CREDENTIAL_PANE_FOCUS[name]){
   if(focus)setTimeout(()=>target.querySelector(focus)?.focus({preventScroll:true}),60);
 }
 function updateCredentialEditorDirty(form){
-  const secret=form.querySelector('[name="secret"]')?.value.trim()||'',extra=form.querySelector('[name="extra"]'),protocol=form.querySelector('select[name="protocol"]'),save=form.querySelector('[data-credential-act="save"]');
-  if(save&&!save.dataset.busy)save.disabled=!secret&&!form.dataset.legacy&&!(extra&&extra.value.trim()!==(form.dataset.original||''))&&!(protocol&&protocol.value!==(form.dataset.originalProtocol||''))&&!credentialCatalogDirty(form.querySelector('[data-credential-catalog]'));
+  const secret=form.querySelector('[name="secret"]')?.value.trim()||'',extra=form.querySelector('[name="extra"]'),protocol=form.querySelector('select[name="protocol"]'),baseUrl=form.querySelector('input[name="baseUrl"]'),save=form.querySelector('[data-credential-act="save"]');
+  if(save&&!save.dataset.busy)save.disabled=!secret&&!form.dataset.legacy&&!(extra&&extra.value.trim()!==(form.dataset.original||''))&&!(protocol&&protocol.value!==(form.dataset.originalProtocol||''))&&!(baseUrl&&baseUrl.value.trim()!==(form.dataset.originalBaseUrl||''))&&!credentialCatalogDirty(form.querySelector('[data-credential-catalog]'));
 }
 function setCredentialHint(scope,name,text,tone=''){
   const hint=scope.querySelector(`[data-credential-hint="${name}"]`),box=scope.querySelector(`[name="${name}"]`)?.closest('.credential-input');
@@ -875,10 +885,11 @@ function credentialSaved(key,message){
 }
 async function submitCredentialEditor(row,button){
   const key=row.dataset.credentialRow,kind=credentialKind(key),form=row.querySelector('.credential-editor-form');
-  const secret=form.querySelector('[name="secret"]').value.trim(),extra=form.querySelector('[name="extra"]'),protocol=form.querySelector('[name="protocol"]');
-  const secretError=credentialSecretError(kind,secret),extraError=extra?credentialExtraError(kind,extra.value,protocol?.value):'';
+  const secret=form.querySelector('[name="secret"]').value.trim(),extra=form.querySelector('[name="extra"]'),protocol=form.querySelector('[name="protocol"]'),baseUrl=form.querySelector('input[name="baseUrl"]');
+  const secretError=credentialSecretError(kind,secret),extraError=extra?credentialExtraError(kind,extra.value,protocol?.value):'',baseURLError=baseUrl?credentialExtraError({extra:kind.baseUrl},baseUrl.value,protocol?.value):'';
   if(secretError){setCredentialHint(form,'secret',secretError,'err');return}
   if(extraError){toast(extraError,'err');extra.focus();return}
+  if(baseURLError){setCredentialHint(form,'baseUrl',baseURLError,'err');baseUrl.focus();return}
   const catalog=form.querySelector('[data-credential-catalog]'),models=credentialCatalogPayload(catalog);
   if(!validateCredentialCatalog(catalog,models))return;
   setCredentialButtonBusy(button,key==='gitToken'?'校验中':'保存中');
@@ -895,7 +906,7 @@ async function submitCredentialEditor(row,button){
       credentialSaved(key,'Git Token 校验通过，已保存');
       return;
     }
-    await saveCredential(key,{secret,...(extra?{extra:extra.value}:{}),...(protocol?{protocol:protocol.value}:{}),...(models?{models}:{})});
+    await saveCredential(key,{secret,...(extra?{extra:extra.value}:{}),...(baseUrl?{baseUrl:baseUrl.value}:{}),...(protocol?{protocol:protocol.value}:{}),...(models?{models}:{})});
     credentialSaved(key,`${kind.short} 已保存`);
   }catch(err){toast(err.message,'err');setCredentialButtonBusy(button,'')}
 }
@@ -981,7 +992,8 @@ function bindCredentialPanel(panel){
       event.target.closest('.credential-input')?.classList.remove('is-bad');
       syncCredentialCatalogEfforts(event.target.closest('[data-catalog-row]'));
     }
-    if(event.target.name==='extra'||event.target.name==='protocol'){const catalogBox=form.querySelector('[data-credential-catalog]');if(catalogBox)syncCredentialCatalog(catalogBox)}
+    if(event.target.name==='extra'||event.target.name==='protocol'||event.target.name==='baseUrl'){const catalogBox=form.querySelector('[data-credential-catalog]');if(catalogBox)syncCredentialCatalog(catalogBox)}
+    if(event.target.name==='baseUrl'){const error=credentialExtraError({extra:credentialKind(form.closest('[data-credential-row]').dataset.credentialRow).baseUrl},event.target.value);setCredentialHint(form,'baseUrl',error,error?'err':'')}
     if(event.target.name==='secret'){
       const kind=credentialKind(form.closest('[data-credential-row]').dataset.credentialRow),error=credentialSecretError(kind,event.target.value),warning=credentialSecretWarning(kind,event.target.value);
       setCredentialHint(form,'secret',error||warning||(kind.key==='gitToken'?GIT_TOKEN_REPLACE_HINT:kind.hint||''),error?'err':warning?'warn':'');
@@ -1006,6 +1018,7 @@ function revealCredentialRow(key){
 // ---- 添加凭证向导 ----
 let credentialWizard=null;
 function credentialWizardDefaults(kind,user){return kind?.extra?credentialExtraValue(kind,credentialValue(user,kind.extra.name)):''}
+function credentialWizardBaseURLDefaults(kind,user){return kind?.baseUrl?String(credentialValue(user,kind.baseUrl.name)||'').trim():''}
 function openCredentialWizard(key){
   const user=credentialUser();
   if(!state.currentUser||state.currentUser.isGuest||!$('#credentialPanel'))return;
@@ -1015,7 +1028,7 @@ function openCredentialWizard(key){
   const kind=preset||CREDENTIAL_RECOMMENDED.map(credentialKind).find(k=>!credentialConfigured(k,user))||CREDENTIAL_KINDS.find(k=>!credentialConfigured(k,user))||null;
   if(credentialWizard)closeCredentialWizard(true);
   credentialUI().open&&toggleCredentialRow(credentialUI().open,false);
-  credentialWizard={step:preset?2:1,kind:kind?.key||null,direct:!!preset,secret:'',extra:credentialWizardDefaults(kind,user),protocol:credentialProtocol(kind||{},user),saving:false,error:'',done:false,guide:{},returnFocus:document.activeElement};
+  credentialWizard={step:preset?2:1,kind:kind?.key||null,direct:!!preset,secret:'',extra:credentialWizardDefaults(kind,user),baseUrl:credentialWizardBaseURLDefaults(kind,user),protocol:credentialProtocol(kind||{},user),saving:false,error:'',done:false,guide:{},returnFocus:document.activeElement};
   let scrim=$('#credentialWizard');
   if(scrim?.closeTimer){clearTimeout(scrim.closeTimer);scrim.closeTimer=0}
   if(!scrim){
@@ -1053,7 +1066,7 @@ function closeCredentialWizard(immediate=false){
 }
 function credentialWizardValid(wizard=credentialWizard){
   const kind=credentialKind(wizard.kind);if(!kind)return {ok:false};
-  const secret=String(wizard.secret||'').trim(),error=credentialSecretError(kind,secret)||(kind.extra?credentialExtraError(kind,wizard.extra,wizard.protocol):'');
+  const secret=String(wizard.secret||'').trim(),error=credentialSecretError(kind,secret)||(kind.extra?credentialExtraError(kind,wizard.extra,wizard.protocol):'')||(kind.baseUrl?credentialExtraError({extra:kind.baseUrl},wizard.baseUrl,wizard.protocol):'');
   return {ok:!!secret&&!error,error};
 }
 function credentialWizardSecretHint(kind,wizard,validity=credentialWizardValid(wizard)){
@@ -1086,22 +1099,24 @@ function credentialWizardStepTwoHTML(kind){
   const extraField=!kind.extra?''
     :kind.extra.options?credentialSelectFieldHTML(kind,wizard.extra)
     :credentialFieldHTML({label:kind.extra.label,note:kind.extra.note||(kind.extra.url?'可选 · 留空使用官方地址':''),name:'extra',type:kind.extra.url?'url':'text',value:wizard.extra,placeholder:kind.extra.placeholder,hint:''});
+  const baseURLField=credentialBaseURLField(kind,String(wizard.baseUrl||'').trim(),'可选 · 留空连接官方站点');
   const protocolField=kind.protocol?credentialProtocolHTML(kind,wizard.protocol||credentialProtocol(kind,{})):'';
   // The network environment decides where the key comes from, so it is chosen first.
   return `<div class="credential-question">${credentialLogo(kind,'is-mini')}<span>${github?'使用访问令牌':'配置 '+escapeHTML(kind.short)}</span><small class="credential-description">${escapeHTML(kind.description)}</small></div>${methods}<ol class="credential-guide">${guide}</ol><div class="credential-fields">
-    ${kind.extra?.options?extraField+secretField:secretField+extraField+protocolField}
+    ${kind.extra?.options?extraField+secretField+baseURLField:secretField+extraField+baseURLField+protocolField}
   </div>`;
 }
 function credentialWizardStepThreeHTML(kind){
   const wizard=credentialWizard;
   if(wizard.done)return `<div class="credential-saved"><span class="credential-check-big"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><h4>${escapeHTML(kind.short)} 已保存</h4><p>下一次运行你负责的任务时生效，可随时在列表中展开编辑。</p></div>`;
   const extra=kind.extra?`<dt>${escapeHTML(kind.extra.label)}</dt><dd${kind.extra.url?' class="credential-mono"':''}>${escapeHTML(credentialExtraLabel(kind,wizard.extra))}</dd>`:'';
+  const baseURL=kind.baseUrl&&String(wizard.baseUrl||'').trim()?`<dt>${escapeHTML(kind.baseUrl.label)}</dt><dd class="credential-mono">${escapeHTML(String(wizard.baseUrl).trim())}</dd>`:'';
   const warning=credentialSecretWarning(kind,wizard.secret);
   const line=wizard.error?`<p class="credential-vline is-err" role="alert">${credentialGlyph('alert',13)}${escapeHTML(wizard.error)}</p>`
     :wizard.saving&&kind.key==='gitToken'?`<p class="credential-vline is-info" role="status">${credentialSpinner(13)}正在校验令牌有效性与权限…</p>`
     :kind.key==='gitToken'?`<p class="credential-vline git-token-verify-status">${credentialGlyph('lock',13)}保存前会先校验令牌有效性与权限</p>`
     :warning?`<p class="credential-vline is-warn" role="status">${credentialGlyph('alert',13)}${escapeHTML(warning)}</p>`:'';
-  return `<div class="credential-question">${credentialGlyph('check',16)}<span>确认并保存</span><small>密钥只在任务运行时注入，不写入 Agent 资产</small></div><div class="credential-summary"><div>${credentialGlyph('key',14)}${escapeHTML(kind.name)}</div><dl><dt>凭证</dt><dd>${escapeHTML(kind.short)}</dd><dt>密钥</dt><dd class="credential-mask">已填写 ••••••••</dd>${extra}<dt>生效</dt><dd>下一次任务</dd></dl></div>${line}`;
+  return `<div class="credential-question">${credentialGlyph('check',16)}<span>确认并保存</span><small>密钥只在任务运行时注入，不写入 Agent 资产</small></div><div class="credential-summary"><div>${credentialGlyph('key',14)}${escapeHTML(kind.name)}</div><dl><dt>凭证</dt><dd>${escapeHTML(kind.short)}</dd><dt>密钥</dt><dd class="credential-mask">已填写 ••••••••</dd>${extra}${baseURL}<dt>生效</dt><dd>下一次任务</dd></dl></div>${line}`;
 }
 function credentialWizardFootHTML(){
   const wizard=credentialWizard;
@@ -1172,12 +1187,14 @@ function credentialWizardInput(event){
   const wizard=credentialWizard,input=event.target;if(!wizard||!input.name)return;
   const kind=credentialKind(wizard.kind),pane=input.closest('.credential-pane');
   if(input.name==='extra')wizard.extra=input.value;
+  if(input.name==='baseUrl')wizard.baseUrl=input.value;
   if(input.name==='protocol')wizard.protocol=input.value;
   if(input.name==='secret')wizard.secret=input.value;
   const valid=credentialWizardValid(),hint=credentialWizardSecretHint(kind,wizard,valid);
   setCredentialHint(pane,'secret',hint.text,hint.tone);
   if(kind.extra?.options){if(input.name==='extra')refreshCredentialEnvironmentLinks(pane,wizard.extra)}
   else if(kind.extra){const extraError=credentialExtraError(kind,wizard.extra,wizard.protocol);setCredentialHint(pane,'extra',extraError,extraError?'err':'')}
+  if(kind.baseUrl){const error=credentialExtraError({extra:kind.baseUrl},wizard.baseUrl,wizard.protocol);setCredentialHint(pane,'baseUrl',error,error?'err':'')}
   if(valid.ok)kind.guide.forEach((_,index)=>markCredentialGuide(index));
   const next=$('#credentialWizard [data-wizard-next]');if(next)next.disabled=!valid.ok;
 }
@@ -1198,6 +1215,7 @@ function selectCredentialWizardKind(key){
   // A secret typed for one kind must never be submitted as another kind's credential.
   wizard.kind=key;wizard.secret='';wizard.guide={};wizard.error='';
   wizard.extra=credentialWizardDefaults(credentialKind(key),credentialUser());
+  wizard.baseUrl=credentialWizardBaseURLDefaults(credentialKind(key),credentialUser());
   wizard.protocol=credentialProtocol(credentialKind(key),credentialUser());
 }
 function credentialWizardClick(event){
@@ -1238,7 +1256,7 @@ async function advanceCredentialWizard(){
     if(kind.key==='gitToken'){
       const outcome=await verifyAndSaveGitToken(secret);
       if(!outcome.saved){wizard.error=`${gitTokenFailure(outcome.result)||'Git Token 校验未通过'}（未保存）`;return}
-    }else await saveCredential(kind.key,{secret,...(kind.extra?{extra:wizard.extra}:{}),...(kind.protocol?{protocol:wizard.protocol}:{})});
+    }else await saveCredential(kind.key,{secret,...(kind.extra?{extra:wizard.extra}:{}),...(kind.baseUrl?{baseUrl:wizard.baseUrl}:{}),...(kind.protocol?{protocol:wizard.protocol}:{})});
     wizard.done=true;wizard.secret='';
     renderCredentialPanel();
     toast(kind.key==='gitToken'?'Git Token 校验通过，已保存':`${kind.short} 已保存`,'ok');

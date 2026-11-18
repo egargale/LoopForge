@@ -451,6 +451,7 @@ func PublicRunnerTask(task RunnerTask) RunnerTask {
 	}
 	copyInvocation := *task.Invocation
 	copyInvocation.CodeBuddyAPIKey = ""
+	copyInvocation.CodeBuddyBaseURL = ""
 	copyInvocation.CodeBuddyInternetEnvironment = ""
 	copyInvocation.CodexAPIKey = ""
 	copyInvocation.CodexBaseURL = ""
@@ -521,6 +522,7 @@ type RunnerInvocation struct {
 	HumanContext                 string   `json:"humanContext,omitempty"`
 	CredentialSource             string   `json:"credentialSource,omitempty"`
 	CodeBuddyAPIKey              string   `json:"codebuddyApiKey,omitempty"`
+	CodeBuddyBaseURL             string   `json:"codebuddyBaseUrl,omitempty"`
 	CodeBuddyInternetEnvironment string   `json:"codebuddyInternetEnvironment,omitempty"`
 	CodexAPIKey                  string   `json:"codexApiKey,omitempty"`
 	CodexBaseURL                 string   `json:"codexBaseUrl,omitempty"`

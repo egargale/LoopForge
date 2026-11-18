@@ -33,6 +33,7 @@ type userWithConfig struct {
 	GongfengTokenExpiresAt       *time.Time `gorm:"column:gongfeng_token_expires_at"`
 	CodeBuddyAPIKey              *string    `gorm:"column:codebuddy_api_key"`
 	CodeBuddyInternetEnvironment string     `gorm:"column:codebuddy_internet_environment"`
+	CodeBuddyBaseURL             *string    `gorm:"column:codebuddy_base_url"`
 	CodeBuddyModels              *string    `gorm:"column:codebuddy_models"`
 	CodexAPIKey                  *string    `gorm:"column:codex_api_key"`
 	CodexBaseURL                 *string    `gorm:"column:codex_base_url"`
@@ -50,7 +51,7 @@ const userSelectColumns = `u.id, u.staff_id, u.login_name, u.chinese_name, u.dep
 	c.git_token, EXISTS (SELECT 1 FROM user_git_ssh_keys k WHERE k.user_id = u.id) AS git_ssh_key_configured,
 	EXISTS (SELECT 1 FROM user_git_http_credentials h WHERE h.user_id = u.id) AS git_http_credentials_configured,
 	EXISTS (SELECT 1 FROM user_git_http_credentials h WHERE h.user_id = u.id AND h.host = 'github.com') AS github_credential_configured,
-	c.gongfeng_refresh_token, c.gongfeng_token_expires_at, c.codebuddy_api_key, COALESCE(c.codebuddy_internet_environment, '') AS codebuddy_internet_environment, c.codebuddy_models,
+	c.gongfeng_refresh_token, c.gongfeng_token_expires_at, c.codebuddy_api_key, COALESCE(c.codebuddy_internet_environment, '') AS codebuddy_internet_environment, c.codebuddy_base_url, c.codebuddy_models,
 	c.codex_api_key, c.codex_base_url, c.codex_models, c.claude_code_api_key, c.claude_code_base_url, c.claude_code_models,
 	c.agent_cli_credentials,
 	u.created_at, u.updated_at`
@@ -64,6 +65,9 @@ func (r userWithConfig) toDomain() domain.User {
 		GitSSHKeyConfigured:          r.GitSSHKeyConfigured,
 		GitHTTPCredentialsConfigured: r.GitHTTPCredentialsConfigured,
 		GitHubCredentialConfigured:   r.GitHubCredentialConfigured,
+	}
+	if r.CodeBuddyBaseURL != nil {
+		u.CodeBuddyBaseURL = *r.CodeBuddyBaseURL
 	}
 	if r.GitToken != nil {
 		u.GitToken = *r.GitToken
@@ -172,6 +176,7 @@ func (r *UsersRepo) PutUser(v domain.User) error {
 		v.CodexAPIKey, v.CodexBaseURL, v.CodexModels = old.CodexAPIKey, old.CodexBaseURL, old.CodexModels
 		v.ClaudeCodeAPIKey, v.ClaudeCodeBaseURL, v.ClaudeCodeModels = old.ClaudeCodeAPIKey, old.ClaudeCodeBaseURL, old.ClaudeCodeModels
 		v.CodeBuddyAPIKey = old.CodeBuddyAPIKey
+		v.CodeBuddyBaseURL = old.CodeBuddyBaseURL
 		v.CodeBuddyInternetEnvironment = old.CodeBuddyInternetEnvironment
 		v.CodeBuddyModels = old.CodeBuddyModels
 		v.AgentCLICredentials = old.AgentCLICredentials
@@ -241,6 +246,7 @@ func userHasConfig(user domain.User) bool {
 	return user.GitToken != "" ||
 		user.GongfengRefreshToken != "" ||
 		user.CodeBuddyAPIKey != "" ||
+		user.CodeBuddyBaseURL != "" ||
 		user.CodeBuddyInternetEnvironment != "" ||
 		len(user.CodeBuddyModels) > 0 ||
 		user.CodexAPIKey != "" ||
@@ -255,6 +261,7 @@ func userHasConfig(user domain.User) bool {
 type UserCredentialUpdate struct {
 	CodeBuddyAPIKey              string             `json:"codeBuddyApiKey"`
 	CodeBuddyAPIKeyClear         bool               `json:"codeBuddyApiKeyClear"`
+	CodeBuddyBaseURL             *string            `json:"codeBuddyBaseUrl"`
 	CodeBuddyInternetEnvironment *string            `json:"codeBuddyInternetEnvironment"`
 	CodeBuddyModels              *[]domain.CLIModel `json:"codeBuddyModels"`
 	CodexAPIKey                  string             `json:"codexApiKey"`
@@ -309,13 +316,22 @@ func (r *UsersRepo) updateUserCredentials(id int64, update UserCredentialUpdate)
 	if !ok {
 		return domain.User{}, errors.New("user not found")
 	}
-	if update.CodeBuddyAPIKeyClear {
-		user.CodeBuddyAPIKey = ""
-	} else if value := strings.TrimSpace(update.CodeBuddyAPIKey); value != "" {
-		user.CodeBuddyAPIKey = value
+	if update.CodeBuddyBaseURL != nil {
+		user.CodeBuddyBaseURL = strings.TrimSpace(*update.CodeBuddyBaseURL)
 	}
 	if update.CodeBuddyInternetEnvironment != nil {
 		user.CodeBuddyInternetEnvironment = strings.TrimSpace(*update.CodeBuddyInternetEnvironment)
+	}
+	// The key block runs last so clearing it always wins over a Base URL in the
+	// same request, whichever order the client set them.
+	if update.CodeBuddyAPIKeyClear {
+		user.CodeBuddyAPIKey = ""
+		// No key means no personal endpoint: a left-over URL would be probed
+		// with no key and, on a sponsored account, would invite the platform
+		// shared key to a member-chosen host.
+		user.CodeBuddyBaseURL = ""
+	} else if value := strings.TrimSpace(update.CodeBuddyAPIKey); value != "" {
+		user.CodeBuddyAPIKey = value
 	}
 	if update.CodeBuddyModels != nil {
 		models, err := normalizeCLIModels(*update.CodeBuddyModels)
@@ -387,6 +403,7 @@ func (r *UsersRepo) writeUserConfig(v domain.User) error {
 		"git_token":              nullableString(v.GitToken),
 		"gongfeng_refresh_token": nullableString(v.GongfengRefreshToken), "gongfeng_token_expires_at": timePtr(v.GongfengTokenExpiresAt),
 		"codebuddy_api_key":              nullableString(v.CodeBuddyAPIKey),
+		"codebuddy_base_url":             nullableString(v.CodeBuddyBaseURL),
 		"codebuddy_internet_environment": v.CodeBuddyInternetEnvironment,
 		"codebuddy_models":               encodeCLIModels(v.CodeBuddyModels),
 		"codex_api_key":                  nullableString(v.CodexAPIKey), "codex_base_url": nullableString(v.CodexBaseURL), "codex_models": encodeCLIModels(v.CodexModels),

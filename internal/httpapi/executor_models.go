@@ -137,7 +137,10 @@ func executorModelCatalogs(kimiBaseURL string, codebuddy assistantModelCatalog) 
 		"codebuddy": {
 			Default: codebuddy.Default,
 			Models:  codebuddyModels,
-			Efforts: effortOptions(domain.ExecutorEffortLevels["codebuddy"]),
+			// A personal Base URL serves its own ids, which this shared catalog
+			// cannot know: allow typing the gateway's model for a role.
+			CustomModel: true,
+			Efforts:     effortOptions(domain.ExecutorEffortLevels["codebuddy"]),
 		},
 		"codex": {
 			CustomModel: true,
