@@ -11,7 +11,7 @@ npm install --global @openai/codex@0.162.1
 codex --version
 ```
 
-Configure the CLI's credential in personal settings. If you select CodeBuddy, use its network environment and put its binary on PATH or set `AGENTFLOW_CODEBUDDY_BIN`. The production image bundles Codex, DeepSeek Harness and, by default, CodeBuddy. If an on-demand CLI is missing, the conversation shows the installation action. SOP sandboxes that use the published image share the first-use installation for Claude Code, OpenCode, Kimi Code and Pi. Connected runners manage their own CLI installations.
+Configure the CLI's credential in personal settings. If you select CodeBuddy, use its network environment and put its binary on PATH or set `AGENTFLOW_CODEBUDDY_BIN`. The production image bundles Codex, DeepSeek Harness, Pi Coding Agent (`pi`) and, by default, CodeBuddy. If an on-demand CLI is missing, the conversation shows the installation action. SOP sandboxes that use the published image share the first-use installation for Claude Code, OpenCode and Kimi Code. Connected runners manage their own CLI installations.
 
 WeCom notifications require `wecom-cli` on the platform service's PATH. The platform image built from this Dockerfile includes `@wecom/cli@1.3.4`; published images gain it with the next release. For a native installation, install it separately with `npm install --global @wecom/cli@1.3.4`, ensure system CA certificates are installed, and verify `wecom-cli --version` as the service user. Configuring a WeCom bot is still required to send notifications.
 

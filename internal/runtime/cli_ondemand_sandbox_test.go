@@ -283,8 +283,8 @@ func TestDockerSandboxOnDemandCLIPathSkipsWithoutInstalling(t *testing.T) {
 func TestOnDemandCLICatalogMarksBundledCLIs(t *testing.T) {
 	catalog := onDemandCLICatalog()
 	for engine, want := range map[string]bool{
-		"codex": true, "codebuddy": true, "dsh": true,
-		"claude-code": false, "opencode": false, "cursor": false, "agy": false, "kimi": false, "pi": false,
+		"codex": true, "codebuddy": true, "dsh": true, "pi": true,
+		"claude-code": false, "opencode": false, "cursor": false, "agy": false, "kimi": false,
 	} {
 		if got := catalog[engine].Bundled; got != want {
 			t.Fatalf("%s bundled = %v, want %v", engine, got, want)
@@ -292,6 +292,9 @@ func TestOnDemandCLICatalogMarksBundledCLIs(t *testing.T) {
 	}
 	if pkg := catalog["dsh"].Package; pkg != "@deepseek-ai/dsh@"+DeepSeekHarnessVersion || !catalog["dsh"].RelaxEngines {
 		t.Fatalf("dsh must pin its release and relax engines: %+v", catalog["dsh"])
+	}
+	if pkg := catalog["pi"].Package; pkg != "@earendil-works/pi-coding-agent@"+PiCodingAgentVersion {
+		t.Fatalf("pi must pin its release: %q", pkg)
 	}
 }
 
