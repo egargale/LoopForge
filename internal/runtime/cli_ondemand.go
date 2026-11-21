@@ -11,10 +11,11 @@ import (
 	"sync"
 )
 
-// CLIs the published platform image does not guarantee. Codex, CodeBuddy and
-// DeepSeek Harness are baked into that image; the rest are installed only after
-// a person asks from a failed conversation. Package names and installer URLs are fixed:
-// the request may choose an engine, never a URL or a package.
+// CLIs the published platform image does not guarantee. Codex, CodeBuddy,
+// DeepSeek Harness and Pi are baked into that image; the rest are installed
+// only after a person asks from a failed conversation. Package names and
+// installer URLs are fixed: the request may choose an engine, never a URL or a
+// package.
 const (
 	cursorInstallerURL  = "https://cursor.com/install"
 	agyInstallerURL     = "https://antigravity.google/cli/install.sh"
@@ -27,6 +28,11 @@ const (
 // release is a prerelease requiring a newer Node than the image ships, so a
 // bare package name resolves to no version at all.
 const DeepSeekHarnessVersion = "0.2.2-rc.1"
+
+// PiCodingAgentVersion is the Pi release the Dockerfile bundles and an
+// installation without it downloads, so a sandbox never resolves whatever the
+// registry published that day.
+const PiCodingAgentVersion = "1.5.2"
 
 type onDemandCLI struct {
 	Engine       string
@@ -50,7 +56,7 @@ func onDemandCLICatalog() map[string]onDemandCLI {
 		"cursor":      {Engine: "cursor", Binary: "cursor-agent", Script: cursorInstallScript},
 		"agy":         {Engine: "agy", Binary: "agy", Script: agyInstallScript},
 		"kimi":        {Engine: "kimi", Binary: "kimi", Package: "@moonshot-ai/kimi-code"},
-		"pi":          {Engine: "pi", Binary: "pi", Package: "@earendil-works/pi-coding-agent"},
+		"pi":          {Engine: "pi", Binary: "pi", Package: "@earendil-works/pi-coding-agent@" + PiCodingAgentVersion, Bundled: true},
 		"dsh":         {Engine: "dsh", Binary: "dsh", Package: "@deepseek-ai/dsh@" + DeepSeekHarnessVersion, RelaxEngines: true, Bundled: true},
 	}
 }
