@@ -543,6 +543,38 @@ func cursorCatalogEqual(a, b []domain.CLIModel) bool {
 // Base URL: {base}/models for OpenAI-style Base URLs (which already end in
 // /v1) and {base}/v1/models for Anthropic ones. Gateways answer both with
 // {"data":[{"id":…,"display_name"|"name":…}]}.
+// assistantNonChatModels are the families an aggregator gateway publishes next
+// to chat models. They cannot answer a chat turn, and a picker that defaults to
+// the first published id (the ASR model a gateway happened to list first) sends
+// every such turn to a model that cannot reply.
+var assistantNonChatModels = []string{
+	"embed", "rerank", "asr", "whisper", "tts", "speech", "voice", "ocr", "moderation",
+	"text-to-image", "stable-diffusion", "sdxl", "flux",
+}
+
+// assistantChatOnly keeps the chat models of a published list. A list without
+// one is returned unchanged: an odd gateway must still offer something.
+func assistantChatOnly(models []assistantDiscoveredModel) []assistantDiscoveredModel {
+	chat := make([]assistantDiscoveredModel, 0, len(models))
+	for _, model := range models {
+		id := strings.ToLower(model.ID)
+		nonChat := false
+		for _, marker := range assistantNonChatModels {
+			if strings.Contains(id, marker) {
+				nonChat = true
+				break
+			}
+		}
+		if !nonChat {
+			chat = append(chat, model)
+		}
+	}
+	if len(chat) == 0 {
+		return models
+	}
+	return chat
+}
+
 func discoverAssistantEngineModels(ctx context.Context, anthropic bool, apiKey, baseURL string) ([]assistantDiscoveredModel, error) {
 	endpoint := strings.TrimRight(baseURL, "/")
 	if anthropic {
@@ -628,7 +660,7 @@ func discoverAssistantEngineModels(ctx context.Context, anthropic bool, apiKey, 
 				break
 			}
 		}
-		return out, nil
+		return assistantChatOnly(out), nil
 	}
 	return nil, lastErr
 }
