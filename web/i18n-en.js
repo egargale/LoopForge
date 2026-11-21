@@ -258,3 +258,13 @@ Object.assign(window.LF_I18N_EN, {
   "执行超时必须为 1–240 分钟": "Execution timeout must be between 1 and 240 minutes",
   "定时任务执行超时": "Scheduled task timed out"
 });
+
+Object.assign(window.LF_I18N_EN,{"未填写职责":"No responsibility set","已共享":"Shared","未使用":"Unused","镜像版本":"Image version","交付汇总":"Delivery summary","基线对齐执行员":"Baseline alignment","方案设计":"Solution design","测试验证":"Test & verification","需求定型":"Requirement definition","人工验收":"Manual acceptance","独立审查":"Independent review","产物发布确认":"Artifact publish approval","人工结果复核":"Human result review","个节点":" nodes","轮 Loop":"-round loop"});
+Object.assign(window.LF_I18N_EN,{"只需名称和模型，角色 prompt、产物与门禁、技能与工具可以创建后再补。":"Only a name and a model are needed; the role prompt, outputs & gates, skills and tools can be added later.","选起点":"Start point","选一个起点，名称和职责会自动填好；也可以从空白开始。":"Pick a start point — name and responsibility are filled in for you, or begin from blank.","空白":"Blank","只填名称和模型，其余创建后再补":"Name and model only; the rest can be added later","核对 PR、Checkers、Pipeline、验收与关闭证据":"Check the PR, checkers, pipeline, acceptance and closure evidence","新建步骤":"New role steps","基本信息":"Basic info","确认创建":"Confirm"});
+Object.assign(window.LF_I18N_EN,{"一句话，列表和流程卡片里展示":"One line, shown in the list and on flow cards","运行方式":"Runtime","角色配置":"Role configuration","插入运行时变量":"Insert runtime variable"});
+Object.assign(window.LF_I18N_EN,{"请填写名称":"Enter a name","标识不能为空":"ID cannot be empty","标识已存在，请换一个":"That ID is already taken, pick another"});
+Object.assign(window.LF_I18N_EN,{"起点":"Start point","角色 prompt、产物与门禁、技能与工具可以创建后再补。":"The role prompt, outputs & gates, skills and tools can be added later."});
+
+// CodeBuddy Base URL: the optional gateway field and the row that replaces the
+// network environment once one is set.
+Object.assign(window.LF_I18N_EN,{"自建网关":"Custom gateway","可选 · 留空连接官方站点":"Optional · leave empty to use the official service"});

@@ -101,7 +101,11 @@
   const punct = [[/，/g, ', '], [/。/g, '. '], [/：/g, ': '], [/；/g, '; '], [/、/g, ', '], [/！/g, '! '], [/？/g, '? '], [/（/g, ' ('], [/）/g, ') '], [/「|」/g, '"'], [/『|』/g, '"']];
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const UNITS = {次: ['time', 'times'], 步: ['step', 'steps'], 个: ['', ''], 台: ['', ''], 条: ['', '']};
+  // Count-noun labels come from the dictionary ("3 规则" → "3 Rules"), so a
+  // count of one has to drop the plural after the fragment pass.
+  const SINGULAR = new Set(['rules', 'artifacts', 'skills', 'gates', 'steps', 'hooks', 'nodes', 'outputs', 'tools', 'loops']);
   const patterns = [
+    [/第\s*(\d+)\s*步，共\s*(\d+)\s*步/g, (_, a, b) => `Step ${a} of ${b}`],
     [/第\s*(\d+)\s*(?:阶段|Stage)/g, 'Stage $1'],
     [/第\s*(\d+)\s*(?:轮|Round)/g, 'Round $1'],
     [/ · (高|中|低) · /g, (_, p) => ` · ${{高: 'High', 中: 'Medium', 低: 'Low'}[p]} · `],
@@ -114,6 +118,7 @@
       const word = UNITS[u][Number(n) === 1 ? 0 : 1];
       return word ? `${n} ${word}` : n;
     }],
+    [/\b1\s+([A-Za-z]+)s\b/g, (m, w) => (SINGULAR.has((w + 's').toLowerCase()) ? `1 ${w}` : m)],
   ];
   const cache = new Map();
 
