@@ -40,10 +40,11 @@ func materializeGateMCP(workspace, configRoot, binaryRel, resultPath, driver str
 		return domain.MCPServerDefinition{}, err
 	}
 	return domain.MCPServerDefinition{
-		ID:        gateMCPServerID,
-		Name:      "LoopForge Gate",
-		Transport: "stdio",
-		Command:   filepath.ToSlash(binaryRel),
+		ID:          gateMCPServerID,
+		Name:        "LoopForge Gate",
+		Description: "提交本节点的终态（pass / rework / fail）与理由，未提交则节点不结束",
+		Transport:   "stdio",
+		Command:     filepath.ToSlash(binaryRel),
 		Environment: map[string]string{
 			"AGENTFLOW_GATE_RESULT_PATH": resultPath,
 		},

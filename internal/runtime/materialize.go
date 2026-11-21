@@ -456,6 +456,11 @@ func mcpConfigEntries(servers []domain.MCPServerDefinition) (map[string]any, err
 				entry["env"] = env
 			}
 		}
+		// Only renderers that support it emit this (Pi lists the server in the
+		// system prompt); the others whitelist their own keys.
+		if d := strings.TrimSpace(m.Description); d != "" {
+			entry["description"] = d
+		}
 		out[m.ID] = entry
 	}
 	return out, nil

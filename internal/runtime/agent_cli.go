@@ -188,6 +188,25 @@ func WriteAgentCLIMCPConfig(kind string, home AgentCLIHome, entries map[string]a
 			}
 		}
 	}
+	if kind == AgentCLIPi {
+		// Pi's default exposure is codemode: the server connects and the tool is
+		// callable from codemode scripts, but it is never declared to the model.
+		// The platform prompt promises native mcp__<server>__* tools, so an agent
+		// handed a gate this way cannot call submit_gate_result and falls back to
+		// hand-rolled JSON-RPC over the binary's stdin.
+		for id, server := range servers {
+			fields, ok := server.(map[string]any)
+			if !ok {
+				continue
+			}
+			fields["exposure"] = "direct"
+			if entry, ok := entries[id].(map[string]any); ok {
+				if d, _ := entry["description"].(string); strings.TrimSpace(d) != "" {
+					fields["description"] = strings.TrimSpace(d)
+				}
+			}
+		}
+	}
 	var document any
 	switch kind {
 	case AgentCLIOpenCode:
