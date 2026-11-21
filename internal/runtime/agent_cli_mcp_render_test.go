@@ -118,3 +118,55 @@ func TestWriteAgentCLIMCPConfigKimiToolTimeout(t *testing.T) {
 		t.Fatalf("kimi mcp:\n got %v\nwant %v", got, want)
 	}
 }
+
+// Pi declares MCP tools to the model only when a server's exposure is
+// "direct"; the default (codemode) leaves submit_gate_result invisible while
+// the platform prompt tells the agent to call it natively.
+func TestWriteAgentCLIMCPConfigPiExposesToolsDirectly(t *testing.T) {
+	home := t.TempDir()
+	entries := map[string]any{
+		"agentflow-gate": map[string]any{
+			"command":     ".agentflow/config/reviewer/gate-mcp",
+			"env":         map[string]any{"AGENTFLOW_GATE_RESULT_PATH": ".agentflow/gate-results/review/attempt-1.json"},
+			"description": "提交本节点的终态与理由",
+		},
+		"gateway": map[string]any{"url": "http://127.0.0.1:9/mcp", "headers": map[string]any{"Authorization": "Bearer x"}},
+	}
+	if err := WriteAgentCLIMCPConfig(AgentCLIPi, HostAgentCLIHome(home), entries, AgentCLIMCPOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	servers := readAgentCLIMCPDoc(t, home, agentCLIMCPPaths[AgentCLIPi]).(map[string]any)["mcpServers"].(map[string]any)
+	for _, id := range []string{"agentflow-gate", "gateway"} {
+		server, ok := servers[id].(map[string]any)
+		if !ok {
+			t.Fatalf("%s missing from pi mcp.json: %v", id, servers)
+		}
+		if server["exposure"] != "direct" {
+			t.Fatalf("%s exposure = %v, want direct", id, server["exposure"])
+		}
+	}
+	gate := servers["agentflow-gate"].(map[string]any)
+	if gate["command"] != ".agentflow/config/reviewer/gate-mcp" || gate["description"] != "提交本节点的终态与理由" {
+		t.Fatalf("gate entry lost its command or description: %v", gate)
+	}
+	if env, _ := gate["env"].(map[string]any); env["AGENTFLOW_GATE_RESULT_PATH"] == nil {
+		t.Fatalf("gate entry lost its env: %v", gate)
+	}
+
+	// The same entries rendered for another CLI must stay exactly as before:
+	// exposure and description are Pi-only keys.
+	other := t.TempDir()
+	if err := WriteAgentCLIMCPConfig(AgentCLIKimi, HostAgentCLIHome(other), entries, AgentCLIMCPOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	kimi := readAgentCLIMCPDoc(t, other, agentCLIMCPPaths[AgentCLIKimi]).(map[string]any)["mcpServers"].(map[string]any)
+	for id, raw := range kimi {
+		server := raw.(map[string]any)
+		if _, ok := server["exposure"]; ok {
+			t.Fatalf("%s leaked pi exposure into %s mcp.json: %v", id, AgentCLIKimi, server)
+		}
+		if _, ok := server["description"]; ok {
+			t.Fatalf("%s leaked pi description into %s mcp.json: %v", id, AgentCLIKimi, server)
+		}
+	}
+}
