@@ -448,7 +448,11 @@ func mcpConfigEntries(servers []domain.MCPServerDefinition) (map[string]any, err
 			}
 		} else {
 			entry["command"] = m.Command
-			entry["args"] = m.Args
+			// Omitted rather than null: Pi rejects a server whose args is not an
+			// array of strings, and the gate server has none.
+			if len(m.Args) > 0 {
+				entry["args"] = m.Args
+			}
 			if cwd := MCPRuntimeWorkingDirectory(m); cwd != "" {
 				entry["cwd"] = cwd
 			}

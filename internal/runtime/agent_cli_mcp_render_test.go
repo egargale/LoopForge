@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"agentflow/internal/domain"
 )
 
 func readAgentCLIMCPDoc(t *testing.T, home, rel string) any {
@@ -168,5 +170,36 @@ func TestWriteAgentCLIMCPConfigPiExposesToolsDirectly(t *testing.T) {
 		if _, ok := server["description"]; ok {
 			t.Fatalf("%s leaked pi description into %s mcp.json: %v", id, AgentCLIKimi, server)
 		}
+	}
+}
+
+// The gate server has no arguments, and Pi rejects a whole server whose args is
+// not an array of strings: `args: null` made it drop agentflow-gate, so the node
+// could not call submit_gate_result at all (seen on a 0.4.1 SOP run).
+func TestWriteAgentCLIMCPConfigPiOmitsEmptyArgs(t *testing.T) {
+	entries, err := mcpConfigEntries([]domain.MCPServerDefinition{{
+		ID:          gateMCPServerID,
+		Name:        "gate",
+		Transport:   "stdio",
+		Command:     ".agentflow/config/reviewer/gate-mcp",
+		Description: "提交本节点的终态与理由",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := entries[gateMCPServerID].(map[string]any)["args"]; ok {
+		t.Fatalf("empty args must be omitted, not rendered as null: %v", entries)
+	}
+
+	home := t.TempDir()
+	if err := WriteAgentCLIMCPConfig(AgentCLIPi, HostAgentCLIHome(home), entries, AgentCLIMCPOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	gate := readAgentCLIMCPDoc(t, home, agentCLIMCPPaths[AgentCLIPi]).(map[string]any)["mcpServers"].(map[string]any)[gateMCPServerID].(map[string]any)
+	if _, ok := gate["args"]; ok {
+		t.Fatalf("pi mcp.json still carries args: %v", gate)
+	}
+	if gate["exposure"] != "direct" || gate["command"] != ".agentflow/config/reviewer/gate-mcp" {
+		t.Fatalf("gate entry lost command or exposure: %v", gate)
 	}
 }
