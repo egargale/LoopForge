@@ -55,7 +55,7 @@ test('platform admin page separates accounts, admins, shared keys and Git host t
   const host = app.document.querySelector('#platformAdminPanel');
   const panel = (id) => host.querySelector(`[data-platform-panel="${id}"]`);
   const tab = (id) => host.querySelector(`[data-platform-tab="${id}"]`);
-  const shown = () => ['accounts', 'admins', 'sharedKey', 'gitHostTrust'].filter((id) => !panel(id).hidden);
+  const shown = () => ['accounts', 'admins', 'sharedKey', 'knowledge', 'gitHostTrust'].filter((id) => !panel(id).hidden);
 
   assert.deepEqual(shown(), ['accounts'], 'accounts open first');
   assert.equal(tab('accounts').getAttribute('aria-selected'), 'true');
@@ -68,6 +68,8 @@ test('platform admin page separates accounts, admins, shared keys and Git host t
   tab('sharedKey').click();
   assert.deepEqual(shown(), ['sharedKey']);
   assert.equal(tab('accounts').getAttribute('aria-selected'), 'false');
+  host.querySelector('#platformTabs').dispatchEvent(new app.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  assert.deepEqual(shown(), ['knowledge']);
   host.querySelector('#platformTabs').dispatchEvent(new app.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
   assert.deepEqual(shown(), ['gitHostTrust']);
   assert.ok(panel('gitHostTrust').querySelector('#platformSSHHostTrustCard'));
@@ -367,4 +369,62 @@ test('platform admins authorize HTTPS addresses in the Git host trust tab', asyn
   const revoke = app.router.calls.find(call => call.method === 'DELETE' && call.path === path);
   assert.equal(new Headers(revoke.options.headers).get('If-Match'), '"second"');
   assert.equal(card.querySelector('[data-https-host-remove]'), null);
+});
+
+test('platform admins configure the team knowledge base and test the upstream connection', async (t) => {
+  const app = await loadApp();
+  t.after(app.close);
+  app.evaluate(`state.currentUser={...state.data.users[0],isGuest:false,isPlatformAdmin:true}`);
+  let saved = { enabled: false, url: 'https://kb.old.example/mcp', tokenConfigured: true, defaultSources: ['handbook'], writeEnabled: false, canManage: true, ready: false };
+  app.router.get('/api/knowledge/settings', () => saved);
+  app.router.put('/api/knowledge/settings', (call) => {
+    saved = { ...call.body, tokenConfigured: Boolean(call.body.token) || saved.tokenConfigured, canManage: true, ready: true };
+    return saved;
+  });
+  app.router.post('/api/knowledge/check', { ok: true, latencyMs: 42, sources: [{ id: 'adr', name: 'ADR' }], tools: ['kb_search', 'kb_fetch'] });
+  app.evaluate(`renderPlatformAdminPanel()`);
+  await settle(8);
+  const host = app.document.querySelector('#platformAdminPanel');
+  const card = host.querySelector('#platformKnowledgeCard');
+  assert.ok(card, 'knowledge tab renders its card');
+  host.querySelector('[data-platform-tab="knowledge"]').click();
+  assert.equal(host.querySelector('[data-platform-panel="knowledge"]').hidden, false);
+  const form = card.querySelector('#platformKnowledgeForm');
+  assert.equal(form.elements.url.value, 'https://kb.old.example/mcp', 'saved URL is shown');
+  assert.equal(form.elements.defaultSources.value, 'handbook');
+  assert.match(card.querySelector('[data-kb-state]').textContent, /未启用/);
+  assert.match(form.elements.token.placeholder, /已配置/);
+
+  card.querySelector('[data-kb-check]').click();
+  await settle(4);
+  assert.deepEqual(
+    app.router.calls.find((call) => call.path === '/api/knowledge/check').body,
+    { url: 'https://kb.old.example/mcp', token: '' },
+    'a check reuses the saved token when the field is empty',
+  );
+  assert.match(card.querySelector('[data-kb-meta]').textContent, /连接正常（42 ms）.*ADR/);
+
+  form.elements.url.value = 'https://kb.new.example/mcp';
+  form.elements.token.value = 'Bearer secret-token';
+  form.elements.enabled.checked = true;
+  form.elements.writeEnabled.checked = true;
+  form.elements.defaultSources.value = 'handbook, adr';
+  form.dispatchEvent(new app.window.Event('submit', { bubbles: true, cancelable: true }));
+  await settle(6);
+  const put = app.router.calls.find((call) => call.path === '/api/knowledge/settings' && call.method === 'PUT');
+  assert.deepEqual(put.body, {
+    enabled: true, url: 'https://kb.new.example/mcp', token: 'Bearer secret-token',
+    writeEnabled: true, defaultSources: ['handbook', 'adr'],
+  });
+  assert.match(card.querySelector('[data-kb-state]').textContent, /已启用/);
+  assert.equal(form.elements.token.value, '', 'the token field is cleared after saving');
+
+  card.querySelector('[data-kb-disable]').click();
+  await settle();
+  app.document.querySelector('#confirmOkBtn').click();
+  await settle(6);
+  const disable = app.router.calls.filter((call) => call.path === '/api/knowledge/settings' && call.method === 'PUT').at(-1);
+  assert.equal(disable.body.enabled, false);
+  assert.equal(disable.body.url, 'https://kb.new.example/mcp', 'disabling keeps the endpoint');
+  assert.match(card.querySelector('[data-kb-state]').textContent, /未启用/);
 });

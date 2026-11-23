@@ -1654,6 +1654,7 @@ const PLATFORM_TABS=[
   {id:'accounts',zh:'成员账号',en:'Accounts'},
   {id:'admins',zh:'平台管理员',en:'Admins'},
   {id:'sharedKey',zh:'共享 CodeBuddy Key',en:'Shared CodeBuddy Key'},
+  {id:'knowledge',zh:'团队知识库',en:'Team Knowledge'},
   {id:'gitHostTrust',zh:'Git 主机信任',en:'Git Host Trust'},
 ];
 function platformTabsHTML(active){
@@ -1823,11 +1824,13 @@ function renderPlatformAdminPanel(){
     </div>
     `)}
     ${platformTabPanel('sharedKey',tab,platformSharedKeyHTML())}
+    ${platformTabPanel('knowledge',tab,platformKnowledgeHTML())}
     ${platformTabPanel('gitHostTrust',tab,platformSSHHostTrustHTML()+platformHTTPSHostTrustHTML())}
   `;
   bindPlatformTabs(host);
   loadPlatformAccounts(host);
   loadPlatformSharedKey(host);
+  loadPlatformKnowledge(host);
   loadPlatformSSHHosts(host);
   loadPlatformHTTPSHosts(host);
   loadPlatformAdmins(host);
@@ -1913,6 +1916,99 @@ function platformSharedKeyHTML(){
         </div>
       </form>
     </section>`;
+}
+// 平台管理 → 团队知识库. The knowledge center page was retired upstream (#169),
+// so the settings live here; they are the only place the KB can be turned on.
+function platformKnowledgeHTML(){
+  return `
+    <section class="platform-admin-main-card" id="platformKnowledgeCard">
+      <div class="platform-admin-head">
+        <div class="platform-admin-head-meta">
+          <h2>${lfT('接入团队知识库','Connect the team knowledge base')}</h2>
+          <p>${lfT('角色打开「接入团队知识库」后，运行时只能只读检索（kb_search / kb_fetch，命中带 source@commit:path#Lx-Ly 引用）；节点产出的 knowledge.md 进入沉淀审核队列，审核通过才写回上游。','Once a role enables “Connect team Knowledge”, its runs get read-only retrieval (kb_search / kb_fetch, hits carry a source@commit:path#Lx-Ly citation); the node\'s knowledge.md goes to the review queue and is written upstream only after approval.')}</p>
+        </div>
+        <span class="platform-admin-count-pill platform-status-pill" data-kb-state>${lfT('加载中','Loading')}</span>
+      </div>
+      <form id="platformKnowledgeForm" class="platform-shared-key-form" autocomplete="off">
+        <div class="platform-shared-key-grid">
+          <div class="platform-shared-key-col">
+            <label class="platform-field"><span>${lfT('服务地址','Service URL')}</span><input name="url" placeholder="https://kb.example.com/mcp" autocomplete="off" spellcheck="false"></label>
+            <label class="platform-field"><span>${lfT('访问 Token','Access token')}</span><input name="token" type="password" autocomplete="new-password" spellcheck="false"></label>
+            <label class="platform-check"><input type="checkbox" name="enabled" role="switch"><span>${lfT('启用知识库','Enable the knowledge base')}</span></label>
+          </div>
+          <div class="platform-shared-key-col">
+            <label class="platform-field"><span>${lfT('默认来源','Default sources')}</span><input name="defaultSources" placeholder="${lfT('来源 ID，多个用逗号分隔','Source IDs, comma separated')}" autocomplete="off" spellcheck="false"><small class="platform-field-hint">${lfT('留空表示 Token 可见的全部来源；项目可以单独覆盖。','Empty means every source the token can see; a project can override it.')}</small></label>
+            <label class="platform-check"><input type="checkbox" name="writeEnabled" role="switch"><span>${lfT('允许把审核通过的沉淀写回上游','Allow reviewed knowledge to be written back upstream')}</span></label>
+            <p class="platform-field-hint">${lfT('哪些角色能检索由「角色定义 → 技能与工具 → 接入团队知识库」控制。','Which roles may read it is set in Roles → Skills & tools → Connect team Knowledge.')}</p>
+          </div>
+        </div>
+        <div class="platform-shared-key-footer">
+          <p class="platform-add-hint" data-kb-meta></p>
+          <div class="platform-shared-key-actions">
+            <button class="button ghost" type="button" data-kb-check>${lfT('检测连接','Test connection')}</button>
+            <button class="button ghost danger" type="button" data-kb-disable hidden>${lfT('停用','Disable')}</button>
+            <button class="button primary" type="submit">${lfT('保存','Save')}</button>
+          </div>
+        </div>
+      </form>
+    </section>`;
+}
+async function loadPlatformKnowledge(host){
+  const card=host.querySelector('#platformKnowledgeCard');if(!card)return;
+  const form=card.querySelector('#platformKnowledgeForm');
+  const badge=card.querySelector('[data-kb-state]'),meta=card.querySelector('[data-kb-meta]');
+  const tabState=host.querySelector('[data-platform-tab="knowledge"] [data-platform-tab-count]');
+  const url=form.elements.url,token=form.elements.token,enabled=form.elements.enabled,write=form.elements.writeEnabled,sources=form.elements.defaultSources;
+  const checkBtn=card.querySelector('[data-kb-check]'),disableBtn=card.querySelector('[data-kb-disable]');
+  const sourceText=list=>(list||[]).join(', ');
+  const readSources=()=>String(sources.value||'').split(/[,，\s]+/).map(s=>s.trim()).filter(Boolean);
+  let settings=null;
+  const render=()=>{
+    const on=!!settings?.enabled;
+    badge.textContent=on?lfT('已启用','Enabled'):lfT('未启用','Disabled');
+    badge.classList.remove('is-on','is-off');badge.classList.add(on?'is-on':'is-off');
+    if(tabState){tabState.className=`platform-tab-state is-${on?'on':'off'}`;tabState.title=badge.textContent;tabState.hidden=false}
+    token.placeholder=settings?.tokenConfigured?lfT('已配置，留空保持不变','Configured; leave empty to keep'):lfT('上游 bearer token','Upstream bearer token');
+    disableBtn.hidden=!on;
+    meta.textContent=on
+      ?lfT(`当前接 ${settings.url}，Token ${settings.tokenConfigured?'已配置':'缺失'}${settings.updatedBy?`，${settings.updatedBy} 最后修改`:''}。`,`Connected to ${settings.url}, token ${settings.tokenConfigured?'configured':'missing'}${settings.updatedBy?`, last changed by ${settings.updatedBy}`:''}.`)
+      :lfT('未启用时，角色里的「接入团队知识库」开关不生效，节点日志会记一条跳过原因。','While disabled the per-role toggle does nothing and nodes log why it was skipped.');
+  };
+  const apply=next=>{
+    settings=next;
+    url.value=next?.url||'';sources.value=sourceText(next?.defaultSources);
+    enabled.checked=!!next?.enabled;write.checked=!!next?.writeEnabled;
+    render();
+  };
+  try{apply(await api('/api/knowledge/settings'))}
+  catch(e){badge.textContent=lfT('加载失败','Load failed');meta.textContent=e.message||lfT('加载知识库配置失败','Could not load the knowledge base settings');return}
+  const body=overrides=>JSON.stringify({enabled:enabled.checked,url:url.value.trim(),token:token.value.trim(),
+    writeEnabled:write.checked,defaultSources:readSources(),...overrides});
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    const submit=form.querySelector('button[type="submit"]');if(submit)submit.disabled=true;
+    try{
+      apply(await api('/api/knowledge/settings',{method:'PUT',body:body()}));
+      token.value='';toast(settings?.enabled?lfT('知识库已保存并启用','Knowledge base saved and enabled'):lfT('知识库配置已保存','Knowledge base settings saved'),'ok');
+    }catch(err){toast(err.message,'err')}
+    finally{if(submit)submit.disabled=false}
+  };
+  checkBtn.onclick=async()=>{
+    checkBtn.disabled=true;meta.textContent=lfT('正在连接上游…','Connecting upstream…');
+    try{
+      const result=await api('/api/knowledge/check',{method:'POST',body:JSON.stringify({url:url.value.trim(),token:token.value.trim()})});
+      if(!result?.ok){meta.textContent=lfT(`连接失败：${result?.error||'未知错误'}`,`Connection failed: ${result?.error||'unknown error'}`);return toast(lfT('知识库连接失败','Knowledge base connection failed'),'err')}
+      const names=(result.sources||[]).map(s=>s.name||s.id).slice(0,6).join('、')||'无来源';
+      meta.textContent=lfT(`连接正常（${result.latencyMs} ms），来源：${names}；工具：${(result.tools||[]).join(' / ')||'未返回'}`,`Connected (${result.latencyMs} ms); sources: ${names}; tools: ${(result.tools||[]).join(' / ')||'none'}`);
+      toast(lfT('知识库连接正常','Knowledge base connection OK'),'ok');
+    }catch(err){meta.textContent=err.message||lfT('检测失败','Check failed');toast(err.message,'err')}
+    finally{checkBtn.disabled=false}
+  };
+  disableBtn.onclick=async()=>{
+    if(!await afConfirm({title:lfT('停用知识库','Disable the knowledge base'),message:lfT('停用后，开启了「接入团队知识库」的角色将不再检索，产出的沉淀也不会进入审核队列。确定停用？','Roles with “Connect team Knowledge” lose retrieval and new knowledge stops entering the review queue. Disable it?'),danger:true,confirmText:lfT('停用','Disable')}))return;
+    try{apply(await api('/api/knowledge/settings',{method:'PUT',body:body({enabled:false})}));toast(lfT('知识库已停用','Knowledge base disabled'),'ok')}
+    catch(err){toast(err.message,'err')}
+  };
 }
 function platformAccountCreatedHTML(action,login,password){
   const who=`<b data-i18n-skip>${escapeHTML(login)}</b>`,secret=`<code>${escapeHTML(password)}</code>`;
