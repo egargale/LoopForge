@@ -18,7 +18,10 @@ bin
 web/native-chat
 *.log
 
-!web/vscode-web/**/node_modules/
+# One exception covers the vendored bundle, node_modules included. Do not add a
+# second pattern ending in /**/node_modules/: BuildKit then stops pruning
+# excluded directories, walks .data, and the build fails on the root-owned
+# files the sandbox creates there (error from sender: permission denied).
 !web/vscode-web/**
 
 # Local acceptance credentials and generated reports never enter build layers.
