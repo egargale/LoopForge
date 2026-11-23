@@ -428,3 +428,67 @@ test('platform admins configure the team knowledge base and test the upstream co
   assert.equal(disable.body.url, 'https://kb.new.example/mcp', 'disabling keeps the endpoint');
   assert.match(card.querySelector('[data-kb-state]').textContent, /未启用/);
 });
+
+test('platform admins review, publish and reject distilled knowledge', async (t) => {
+  const app = await loadApp();
+  t.after(app.close);
+  app.evaluate(`state.currentUser={...state.data.users[0],isGuest:false,isPlatformAdmin:true}`);
+  const pending = {
+    id: 'kbs-1', title: 'ADR-0026 索引', projectId: 'hmm', createdBy: 'admin', status: 'pending',
+    source: '', path: '', content: '## 结论\n新 ADR 与索引同一提交', runId: 'run-1234567890ab',
+    artifactId: 'art-1', createdAt: '2026-11-23T10:00:00Z',
+  };
+  app.router.get('/api/knowledge/settings', {
+    enabled: true, url: 'https://kb.example/mcp', tokenConfigured: true, writeEnabled: true,
+    canManage: true, ready: true, defaultSources: ['adr'],
+  });
+  app.router.get('/api/knowledge/sources', [{ id: 'adr', name: 'ADR' }, { id: 'handbook', name: 'Handbook' }]);
+  app.router.get('/api/knowledge/submissions', [pending]);
+  app.router.put(/^\/api\/knowledge\/submissions\/kbs-1$/, (call) => ({ ...pending, ...call.body }));
+  app.router.post(/^\/api\/knowledge\/submissions\/kbs-1\/publish$/, {
+    ...pending, status: 'published', source: 'adr', path: 'adr/0026.md', commit: 'abc1234',
+  });
+  app.evaluate(`renderPlatformAdminPanel()`);
+  await settle(8);
+
+  const host = app.document.querySelector('#platformAdminPanel');
+  const card = host.querySelector('#platformKnowledgeQueueCard');
+  assert.ok(card, 'the knowledge tab renders the review card');
+  assert.match(card.textContent, /沉淀审核/);
+  assert.deepEqual([...card.querySelectorAll('#knowledgeSourceOptions option')].map((option) => option.value),
+    ['adr', 'handbook'], 'the source list comes from the upstream');
+  const row = card.querySelector('[data-kg-item="kbs-1"]');
+  assert.ok(row, 'a queued submission is listed');
+  assert.match(row.textContent, /待审核/);
+  assert.match(row.querySelector('details').textContent, /新 ADR 与索引同一提交/);
+
+  row.querySelector('input[name="source"]').value = 'adr';
+  row.querySelector('input[name="path"]').value = 'adr/0026.md';
+  row.querySelector('[data-kg-publish]').click();
+  await settle(8);
+  const put = app.router.calls.find((call) => call.method === 'PUT' && call.path === '/api/knowledge/submissions/kbs-1');
+  assert.deepEqual(put.body, { source: 'adr', path: 'adr/0026.md' }, 'the reviewer picked source and path before publishing');
+  assert.ok(app.router.calls.some((call) => call.method === 'POST' && call.path === '/api/knowledge/submissions/kbs-1/publish'));
+  assert.match(card.textContent, /已发布/, 'the row reflects the published state');
+});
+
+test('platform admins reject a submission with a note', async (t) => {
+  const app = await loadApp();
+  t.after(app.close);
+  app.evaluate(`state.currentUser={...state.data.users[0],isGuest:false,isPlatformAdmin:true}`);
+  app.evaluate(`window.afPrompt=async()=> '缺上下文，补充复现步骤'`);
+  const pending = { id: 'kbs-2', title: '索引规则', status: 'pending', projectId: 'hmm', content: 'body' };
+  app.router.get('/api/knowledge/settings', { enabled: true, url: 'https://kb.example/mcp', tokenConfigured: true, canManage: true, ready: true });
+  app.router.get('/api/knowledge/submissions', [pending]);
+  app.router.post(/^\/api\/knowledge\/submissions\/kbs-2\/reject$/, (call) => ({
+    ...pending, status: 'rejected', reviewNote: call.body.reviewNote,
+  }));
+  app.evaluate(`renderPlatformAdminPanel()`);
+  await settle(8);
+  const card = app.document.querySelector('#platformKnowledgeQueueCard');
+  card.querySelector('[data-kg-item="kbs-2"] [data-kg-reject]').click();
+  await settle(6);
+  const reject = app.router.calls.find((call) => call.method === 'POST' && call.path === '/api/knowledge/submissions/kbs-2/reject');
+  assert.deepEqual(reject.body, { reviewNote: '缺上下文，补充复现步骤' });
+  assert.match(card.textContent, /已驳回/);
+});

@@ -1831,6 +1831,7 @@ function renderPlatformAdminPanel(){
   loadPlatformAccounts(host);
   loadPlatformSharedKey(host);
   loadPlatformKnowledge(host);
+  loadPlatformKnowledgeQueue(host);
   loadPlatformSSHHosts(host);
   loadPlatformHTTPSHosts(host);
   loadPlatformAdmins(host);
@@ -1951,6 +1952,21 @@ function platformKnowledgeHTML(){
           </div>
         </div>
       </form>
+    </section>
+    <section class="platform-admin-main-card" id="platformKnowledgeQueueCard">
+      <div class="platform-admin-head">
+        <div class="platform-admin-head-meta">
+          <h2>${lfT('沉淀审核','Knowledge review')}</h2>
+          <p>${lfT('节点产出的 knowledge.md 提交后进入这里；审核通过才会写回上游知识库（需先打开「允许把审核通过的沉淀写回上游」）。','Knowledge.md produced by a node lands here once submitted; it is written upstream only after you approve it (turn on “Allow reviewed knowledge to be written back upstream” first).')}</p>
+        </div>
+        <span class="platform-admin-count-pill" data-kg-count>${lfT('加载中','Loading')}</span>
+      </div>
+      <div class="platform-shared-key-footer platform-kg-toolbar">
+        <label class="platform-field platform-kg-filter"><span>${lfT('状态','Status')}</span><select name="status"><option value="pending">${lfT('待审核','Pending')}</option><option value="published">${lfT('已发布','Published')}</option><option value="rejected">${lfT('已驳回','Rejected')}</option><option value="">${lfT('全部','All')}</option></select></label>
+        <div class="platform-shared-key-actions"><button class="button ghost" type="button" data-kg-reload>${lfT('刷新','Refresh')}</button></div>
+      </div>
+      <div class="platform-admin-list" data-kg-list></div>
+      <datalist id="knowledgeSourceOptions"></datalist>
     </section>`;
 }
 async function loadPlatformKnowledge(host){
@@ -2009,6 +2025,94 @@ async function loadPlatformKnowledge(host){
     try{apply(await api('/api/knowledge/settings',{method:'PUT',body:body({enabled:false})}));toast(lfT('知识库已停用','Knowledge base disabled'),'ok')}
     catch(err){toast(err.message,'err')}
   };
+}
+function knowledgeStatusText(status){
+  return {pending:lfT('待审核','Pending'),published:lfT('已发布','Published'),rejected:lfT('已驳回','Rejected')}[status]||status||'';
+}
+function knowledgeQueueItemHTML(item){
+  const status=item.status||'pending';
+  const meta=[item.projectId,item.createdBy,item.createdAt?new Date(item.createdAt).toLocaleString():'',item.runId?`Run ${String(item.runId).slice(-8)}`:''].filter(Boolean).map(value=>`<span>${escapeHTML(String(value))}</span>`).join('<i>·</i>');
+  return `<article class="platform-admin-row platform-kg-item" data-kg-item="${escapeHTML(item.id)}">
+    <header class="platform-kg-head">
+      <div class="platform-kg-title"><b>${escapeHTML(item.title||lfT('未命名知识','Untitled knowledge'))}</b><div class="platform-admin-meta">${meta}</div></div>
+      <span class="platform-admin-count-pill platform-kg-state ${escapeHTML(status)}">${escapeHTML(knowledgeStatusText(status))}</span>
+    </header>
+    <div class="platform-kg-fields">
+      <label class="platform-field"><span>${lfT('来源','Source')}</span><input name="source" list="knowledgeSourceOptions" value="${escapeHTML(item.source||'')}" placeholder="${lfT('来源 ID','Source ID')}" spellcheck="false" autocomplete="off"></label>
+      <label class="platform-field"><span>${lfT('写入路径','Path')}</span><input name="path" value="${escapeHTML(item.path||'')}" placeholder="guides/xxx.md" spellcheck="false" autocomplete="off"></label>
+    </div>
+    ${item.error?`<p class="platform-add-hint platform-kg-error">${escapeHTML(item.error)}</p>`:''}
+    ${item.reviewNote?`<p class="platform-add-hint">${lfT('驳回原因','Rejection note')}：${escapeHTML(item.reviewNote)}</p>`:''}
+    <details class="platform-kg-body"><summary>${lfT('查看正文','Show content')}</summary><pre>${escapeHTML(item.content||'')}</pre></details>
+    <footer class="platform-shared-key-actions platform-kg-actions">
+      <button type="button" class="button ghost small" data-kg-save>${lfT('保存来源/路径','Save source & path')}</button>
+      <button type="button" class="button primary small" data-kg-publish>${lfT('发布','Publish')}</button>
+      <button type="button" class="button ghost small" data-kg-reject>${lfT('驳回','Reject')}</button>
+      <button type="button" class="button ghost small danger" data-kg-delete>${lfT('删除','Delete')}</button>
+    </footer>
+  </article>`;
+}
+// 平台管理 → 团队知识库 → 沉淀审核。Agent 只把 knowledge.md 产出到工作区，
+// 提交（运行页）后才入队，这里的发布是唯一写回上游的路径。
+async function loadPlatformKnowledgeQueue(host){
+  const card=host.querySelector('#platformKnowledgeQueueCard');if(!card)return;
+  const list=card.querySelector('[data-kg-list]'),count=card.querySelector('[data-kg-count]'),filter=card.querySelector('select[name="status"]'),sourceOptions=card.querySelector('#knowledgeSourceOptions');
+  let items=[];
+  const render=()=>{
+    count.textContent=lfT(`${items.length} 条`,`${items.length} item${items.length===1?'':'s'}`);
+    list.innerHTML=items.map(knowledgeQueueItemHTML).join('')||`<div class="empty-inline"><p>${lfT('当前筛选下没有沉淀。节点提交 knowledge.md 后会出现在这里。','Nothing under this filter. Items appear after a run submits its knowledge.md.')}</p></div>`;
+    list.querySelectorAll('[data-kg-item]').forEach(row=>{
+      const item=items.find(entry=>entry.id===row.dataset.kgItem);if(!item)return;
+      const source=row.querySelector('input[name="source"]'),path=row.querySelector('input[name="path"]');
+      const disableAll=on=>row.querySelectorAll('button').forEach(button=>{button.disabled=on});
+      const save=async()=>{
+        const body={source:source.value.trim(),path:path.value.trim()};
+        const saved=await api(`/api/knowledge/submissions/${encodeURIComponent(item.id)}`,{method:'PUT',body:JSON.stringify(body)});
+        item.source=saved?.source??body.source;item.path=saved?.path??body.path;item.status=saved?.status||item.status;
+        return item;
+      };
+      row.querySelector('[data-kg-save]').onclick=async()=>{
+        disableAll(true);
+        try{await save();toast(lfT('已保存','Saved'),'ok');render()}
+        catch(err){disableAll(false);toast(err.message,'err')}
+      };
+      row.querySelector('[data-kg-publish]').onclick=async()=>{
+        disableAll(true);
+        try{
+          if(source.value.trim()!==(item.source||'')||path.value.trim()!==(item.path||''))await save();
+          const published=await api(`/api/knowledge/submissions/${encodeURIComponent(item.id)}/publish`,{method:'POST'});
+          item.status=published?.status||'published';item.error=published?.error||'';
+          toast(lfT('已写回上游知识库','Written back to the upstream knowledge base'),'ok');render();
+        }catch(err){disableAll(false);toast(err.message,'err')}
+      };
+      row.querySelector('[data-kg-reject]').onclick=async()=>{
+        const note=await afPrompt({title:lfT('驳回沉淀','Reject knowledge'),message:lfT('请填写驳回原因，提交者会看到：','Reason for rejecting (the submitter sees it):'),defaultValue:''});
+        if(note===null||note===undefined)return;
+        disableAll(true);
+        try{const rejected=await api(`/api/knowledge/submissions/${encodeURIComponent(item.id)}/reject`,{method:'POST',body:JSON.stringify({reviewNote:note})});item.status=rejected?.status||'rejected';item.reviewNote=note;toast(lfT('已驳回','Rejected'),'ok');render()}
+        catch(err){disableAll(false);toast(err.message,'err')}
+      };
+      row.querySelector('[data-kg-delete]').onclick=async()=>{
+        if(!await afConfirm({title:lfT('删除沉淀','Delete knowledge'),message:lfT('删除后不可恢复。确定删除？','This cannot be undone. Delete it?'),danger:true,confirmText:lfT('删除','Delete')}))return;
+        disableAll(true);
+        try{await api(`/api/knowledge/submissions/${encodeURIComponent(item.id)}`,{method:'DELETE'});items=items.filter(entry=>entry.id!==item.id);toast(lfT('已删除','Deleted'),'ok');render()}
+        catch(err){disableAll(false);toast(err.message,'err')}
+      };
+    });
+  };
+  const load=async()=>{
+    count.textContent=lfT('加载中','Loading');
+    try{const rows=await api(`/api/knowledge/submissions?status=${encodeURIComponent(filter.value)}`,{silent:true});items=Array.isArray(rows)?rows:[]}
+    catch(err){items=[];count.textContent=lfT('加载失败','Load failed');list.innerHTML=`<div class="empty-inline"><p>${escapeHTML(err.message||lfT('无法读取沉淀队列','Could not load the review queue'))}</p></div>`;return}
+    render();
+  };
+  filter.onchange=()=>load();
+  card.querySelector('[data-kg-reload]').onclick=()=>load();
+  try{
+    const sources=await api('/api/knowledge/sources',{silent:true});
+    if(Array.isArray(sources))sourceOptions.innerHTML=sources.map(source=>`<option value="${escapeHTML(source.id||'')}">${escapeHTML(source.name||source.id||'')}</option>`).join('');
+  }catch(e){/* 未配置知识库时没有来源列表，来源可以手填 */}
+  await load();
 }
 function platformAccountCreatedHTML(action,login,password){
   const who=`<b data-i18n-skip>${escapeHTML(login)}</b>`,secret=`<code>${escapeHTML(password)}</code>`;

@@ -300,3 +300,43 @@ test('child pause and cancellation polling refreshes motion without parent strea
     }
   }
 });
+
+test('run detail deposits knowledge artifacts into the team review queue', async (t) => {
+  const app = await loadApp();
+  t.after(app.close);
+  const run = {
+    ...app.evaluate('structuredClone(state.data.runs[0])'), status: 'succeeded',
+    workflowSnapshot: app.evaluate('structuredClone(state.data.workflows[0])'),
+    executionContext: { projectId: 'proj-1' },
+    nodes: { 'node-1': { status: 'succeeded', attempt: 1 } },
+    artifacts: [{ id: 'art-kb', runId: 'run-1', nodeId: 'node-1', attempt: 1, name: 'knowledge.md',
+      path: 'knowledge.md', mediaType: 'text/markdown', size: 2048 }],
+  };
+  let queued = [];
+  app.router.get('/api/runs/run-1', run);
+  app.router.get(/^\/api\/knowledge\/submissions/, () => queued);
+  app.router.post('/api/knowledge/submissions', (call) => {
+    queued = [{ id: 'kbs-9', title: '索引规则', status: 'pending', runId: call.body.runId, artifactId: call.body.artifactId }];
+    return queued[0];
+  });
+  app.evaluate(`state.data.runs=[${JSON.stringify(run)}];state.selectedRun='run-1';state.activeRun=state.data.runs[0]`);
+  app.evaluate(`switchView('runs');showRunDetail('run-1')`);
+  await settle(8);
+
+  const host = app.document.querySelector('#runDetail');
+  assert.ok(host.querySelector('[data-run-tab="knowledge"]'), 'the run page has a deposit tab');
+  host.querySelector('[data-run-tab="knowledge"]').click();
+  await settle(6);
+  const pane = () => host.querySelector('[data-run-pane="knowledge"]');
+  assert.match(pane().textContent, /知识沉淀/);
+  assert.match(pane().textContent, /提交只入队，不直接写库/);
+
+  const submit = pane().querySelector('[data-knowledge-submit="art-kb"]');
+  assert.ok(submit, 'knowledge.md carries a deposit action');
+  submit.click();
+  await settle(8);
+  const post = app.router.calls.find((call) => call.method === 'POST' && call.path === '/api/knowledge/submissions');
+  assert.deepEqual(post.body, { runId: 'run-1', artifactId: 'art-kb' }, 'deposit submits the artifact, not free text');
+  assert.match(pane().textContent, /待审核/, 'the queued artifact shows its review state');
+  assert.equal(pane().querySelector('[data-knowledge-submit="art-kb"]'), null, 'a queued artifact cannot be submitted twice');
+});
